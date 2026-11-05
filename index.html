@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="vi">
 <head>
-  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="theme-color" content="#7658e8" />
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="theme-color" content="#7658e8" /><meta name="apple-mobile-web-app-capable" content="yes" /><meta name="apple-mobile-web-app-status-bar-style" content="default" /><link rel="manifest" href="./manifest.json" />
   <title>KhoFlow — Nhật ký kho</title>
   <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet"><link rel="stylesheet" href="styles.css" />
@@ -15,5 +15,5 @@
       <section id="receive-view" class="view"><div class="section-toolbar"><div><h2>Nhập kho</h2><p>Ghi nhận hàng mới nhập vào kho.</p></div><button class="primary-btn" data-open-modal="receive">＋ Ghi nhập kho</button></div><div class="form-hint"><b>Nhập nhanh:</b> chọn mặt hàng, số lượng, ngày nhập và nhà cung cấp hoặc nguồn hàng.</div><div class="panel"><div class="table-wrap"><table><thead><tr><th>NGÀY NHẬP</th><th>HÀNG HÓA</th><th>SỐ LƯỢNG</th><th>NGUỒN HÀNG</th><th>NGƯỜI GIAO</th><th>GHI CHÚ</th></tr></thead><tbody id="receives-table"></tbody></table></div></div></section>
       <section id="history-view" class="view"><div class="section-toolbar"><div><h2>Lịch sử giao dịch</h2><p>Toàn bộ lịch sử nhập và xuất kho.</p></div><div class="toolbar-actions"><button class="outline-btn" id="export-history">Xuất CSV</button><button class="outline-btn" id="export-xlsx-history">Xuất Excel</button></div></div><div class="filter-row"><div class="search-box">⌕<input id="history-search" placeholder="Tìm hàng, người nhận, người giao..." /></div><select id="history-type"><option value="all">Tất cả giao dịch</option><option value="out">Xuất kho</option><option value="in">Nhập kho</option></select></div><div class="panel"><div class="table-wrap"><table><thead><tr><th>THỜI GIAN</th><th>LOẠI</th><th>HÀNG HÓA</th><th>SỐ LƯỢNG</th><th>NGƯỜI LIÊN QUAN</th><th>GHI CHÚ</th></tr></thead><tbody id="history-table"></tbody></table></div></div></section>
     <footer class="site-footer">Design by Sáng</footer></main></div><div id="modal-root"></div><div id="toast" class="toast"></div>
-  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script><script src="app.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script><script src="app.js"></script><script>if("serviceWorker" in navigator){window.addEventListener("load",()=>navigator.serviceWorker.register("./service-worker.js"));}</script>
 </body></html>
