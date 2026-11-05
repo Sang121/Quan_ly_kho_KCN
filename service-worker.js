@@ -5,7 +5,7 @@ const APP_ASSETS = [
   './styles.css',
   './app.js',
   './manifest.json',
-  'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js'
+  './xlsx.full.min.js'
 ];
 
 self.addEventListener('install', event => {
