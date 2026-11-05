@@ -1,0 +1,11 @@
+{
+  "name": "KhoFlow - Nhật ký kho",
+  "short_name": "KhoFlow",
+  "description": "Quản lý tồn kho, nhập kho, xuất kho và lịch sử giao dịch.",
+  "lang": "vi",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f7f8fb",
+  "theme_color": "#7658e8"
+}
