@@ -1,6 +1,6 @@
 {
-  "name": "KhoFlow - Nhật ký kho",
-  "short_name": "KhoFlow",
+  "name": "Kho PHD 公端 - Nhật ký kho",
+  "short_name": "Kho PHD",
   "description": "Quản lý tồn kho, nhập kho, xuất kho và lịch sử giao dịch.",
   "lang": "vi",
   "start_url": "./",
