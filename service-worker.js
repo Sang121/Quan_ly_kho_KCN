@@ -1,11 +1,11 @@
-const CACHE_NAME = 'khoflow-v5';
+const CACHE_NAME = 'khoflow-v9';
 const APP_ASSETS = [
   './',
   './index.html',
   './styles.css',
   './app.js',
   './manifest.json',
-  './assets/logo-fuwing.webp',
+  './assets/logo-icon.png',
   './xlsx.full.min.js'
 ];
 

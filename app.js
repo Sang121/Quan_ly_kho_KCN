@@ -42,6 +42,23 @@ const messages = {
     requiredPeople: "Vui lòng nhập người nhận và người giao",
     requiredDepartment: "Vui lòng nhập bộ phận mượn",
     notEnough: "Không đủ tồn kho",
+    addProduct: "Thêm mặt hàng",
+    editProduct: "Sửa mặt hàng",
+    productName: "Tên hàng",
+    productSku: "Mã hàng",
+    productUnit: "Đơn vị",
+    initialQuantity: "Số lượng ban đầu",
+    alertThreshold: "Định mức cảnh báo",
+    namePlaceholder: "Ví dụ: Nước rửa tay",
+    unitPlaceholder: "chai, thùng, hộp...",
+    updateProduct: "Cập nhật",
+    saveProduct: "Lưu mặt hàng",
+    requiredProductFields: "Vui lòng nhập tên hàng và đơn vị",
+    invalidProductNumbers:
+      "Số lượng và định mức phải là số nguyên không âm",
+    productNotFound: "Không tìm thấy mặt hàng",
+    productUpdated: "Đã cập nhật mặt hàng",
+    productAdded: "Đã thêm mặt hàng",
   },
   zh: {
     dashboard: "总览",
@@ -82,6 +99,22 @@ const messages = {
     requiredPeople: "请输入领取人和交付人",
     requiredDepartment: "请输入借用部门",
     notEnough: "库存不足",
+    addProduct: "添加商品",
+    editProduct: "编辑商品",
+    productName: "商品名称",
+    productSku: "商品编号",
+    productUnit: "单位",
+    initialQuantity: "初始数量",
+    alertThreshold: "警戒线",
+    namePlaceholder: "例如：洗手液",
+    unitPlaceholder: "瓶、箱、盒...",
+    updateProduct: "更新",
+    saveProduct: "保存商品",
+    requiredProductFields: "请输入商品名称和单位",
+    invalidProductNumbers: "数量和警戒线必须是非负整数",
+    productNotFound: "找不到商品",
+    productUpdated: "商品已更新",
+    productAdded: "商品已添加",
   },
 };
 const tr = (key) => messages[language][key] || key;
@@ -244,7 +277,7 @@ function openModal(type, id = null) {
   if (type === "product") {
     const existing = id ? db.products.find((p) => p.id === id) : null;
     qs("#modal-root").innerHTML =
-      `<div class="modal-backdrop"><div class="modal"><div class="modal-head"><h3>${existing ? "Sửa mặt hàng" : "Thêm mặt hàng"}</h3><button class="close-btn" data-close>×</button></div><div class="modal-body"><div class="field"><label>TÊN HÀNG</label><input id="f-name" placeholder="Ví dụ: Nước rửa tay" value="${esc(existing?.name || "")}"></div><div class="form-row"><div class="field"><label>MÃ HÀNG</label><input id="f-sku" placeholder="HH-004" value="${esc(existing?.sku || "")}"></div><div class="field"><label>ĐƠN VỊ</label><input id="f-unit" placeholder="chai, thùng, hộp..." value="${esc(existing?.unit || "")}"></div></div><div class="field"><label>SỐ LƯỢNG BAN ĐẦU</label><input id="f-qty" type="number" min="0" value="${existing?.qty ?? 0}"></div><div class="field"><label>ĐỊNH MỨC CẢNH BÁO</label><input id="f-min" type="number" min="0" value="${existing?.min ?? 1}"></div><div class="modal-actions"><button class="cancel-btn" data-close>Hủy</button><button class="primary-btn" id="save-modal">${existing ? "Cập nhật" : "Lưu mặt hàng"}</button></div></div></div></div>`;
+      `<div class="modal-backdrop"><div class="modal"><div class="modal-head"><h3>${existing ? tr("editProduct") : tr("addProduct")}</h3><button class="close-btn" data-close>×</button></div><div class="modal-body"><div class="field"><label>${tr("productName").toUpperCase()}</label><input id="f-name" placeholder="${tr("namePlaceholder")}" value="${esc(existing?.name || "")}"></div><div class="form-row"><div class="field"><label>${tr("productSku").toUpperCase()}</label><input id="f-sku" placeholder="HH-004" value="${esc(existing?.sku || "")}"></div><div class="field"><label>${tr("productUnit").toUpperCase()}</label><input id="f-unit" placeholder="${tr("unitPlaceholder")}" value="${esc(existing?.unit || "")}"></div></div><div class="field"><label>${tr("initialQuantity").toUpperCase()}</label><input id="f-qty" type="number" min="0" value="${existing?.qty ?? 0}"></div><div class="field"><label>${tr("alertThreshold").toUpperCase()}</label><input id="f-min" type="number" min="0" value="${existing?.min ?? 1}"></div><div class="modal-actions"><button class="cancel-btn" data-close>${tr("cancel")}</button><button class="primary-btn" id="save-modal">${existing ? tr("updateProduct") : tr("saveProduct")}</button></div></div></div></div>`;
     qs("#save-modal").onclick = () => saveProduct(id);
     return;
   }
@@ -287,9 +320,9 @@ function saveProduct(id = null) {
     unit = qs("#f-unit").value.trim();
   const qty = Number(qs("#f-qty").value),
     min = Number(qs("#f-min").value);
-  if (!name || !unit) return showToast("Vui lòng nhập tên hàng và đơn vị");
+  if (!name || !unit) return showToast(tr("requiredProductFields"));
   if (!Number.isInteger(qty) || qty < 0 || !Number.isInteger(min) || min < 0)
-    return showToast("Số lượng và định mức phải là số nguyên không âm");
+    return showToast(tr("invalidProductNumbers"));
   const data = {
     name,
     sku:
@@ -301,12 +334,12 @@ function saveProduct(id = null) {
   };
   if (id) {
     const product = db.products.find((p) => p.id === id);
-    if (!product) return showToast("Không tìm thấy mặt hàng");
+    if (!product) return showToast(tr("productNotFound"));
     Object.assign(product, data);
-    showToast("Đã cập nhật mặt hàng");
+    showToast(tr("productUpdated"));
   } else {
     db.products.push({ id: Date.now(), ...data });
-    showToast("Đã thêm mặt hàng");
+    showToast(tr("productAdded"));
   }
   save();
   qs("#modal-root").innerHTML = "";

@@ -7,5 +7,13 @@
   "scope": "./",
   "display": "standalone",
   "background_color": "#f7f8fb",
-  "theme_color": "#7658e8"
+  "theme_color": "#7658e8",
+  "icons": [
+    {
+      "src": "./assets/logo-icon.png",
+      "type": "image/png",
+      "sizes": "771x771",
+      "purpose": "any maskable"
+    }
+  ]
 }
