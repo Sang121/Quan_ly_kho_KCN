@@ -2,7 +2,6 @@ const DATA_VERSION = 4;
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const emptyData = { version: DATA_VERSION, products: [], transactions: [] };
 let language = localStorage.getItem("khoflow-language") || "vi";
-let sidebarCollapsed = localStorage.getItem("khoflow-sidebar-collapsed") === "1";
 const messages = {
   vi: {
     dashboard: "Tổng quan",
@@ -119,27 +118,6 @@ const messages = {
   },
 };
 const tr = (key) => messages[language][key] || key;
-const applySidebarState = () => {
-  document.body.classList.toggle("sidebar-collapsed", sidebarCollapsed);
-  const toggle = qs("#sidebar-toggle");
-  if (!toggle) return;
-  const label =
-    language === "zh"
-      ? sidebarCollapsed
-        ? "展开侧边栏"
-        : "收起侧边栏"
-      : sidebarCollapsed
-        ? "Mở rộng thanh bên"
-        : "Thu nhỏ thanh bên";
-  toggle.textContent = sidebarCollapsed ? "▶" : "◀";
-  toggle.title = label;
-  toggle.setAttribute("aria-label", label);
-};
-const toggleSidebar = () => {
-  sidebarCollapsed = !sidebarCollapsed;
-  localStorage.setItem("khoflow-sidebar-collapsed", sidebarCollapsed ? "1" : "0");
-  applySidebarState();
-};
 let db = JSON.parse(localStorage.getItem("khoflow-db") || "null");
 if (!db) {
   db = emptyData;
@@ -456,7 +434,6 @@ function applyLanguage() {
   });
   qs("#language-toggle").textContent =
     language === "zh" ? "VI / 中" : "中 / VI";
-  applySidebarState();
   const active = document.querySelector(".nav-item.active")?.dataset.view;
   if (active) qs("#page-title").textContent = tr(labels[active]);
   const staticMap =
@@ -974,7 +951,6 @@ document.addEventListener("click", (e) => {
     exportXlsx();
   if (e.target.id === "export-history") exportCSV();
   if (e.target.id === "language-toggle") toggleLanguage();
-  if (e.target.id === "sidebar-toggle") toggleSidebar();
 });
 qs("#xlsx-file")?.addEventListener("change", (e) => {
   if (e.target.files[0]) importXlsx(e.target.files[0]);
@@ -983,5 +959,4 @@ qs("#xlsx-file")?.addEventListener("change", (e) => {
   qs("#" + id)?.addEventListener("input", filterTables),
 );
 render();
-applySidebarState();
 applyLanguage();
