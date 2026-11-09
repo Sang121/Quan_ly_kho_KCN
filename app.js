@@ -1,54 +1,929 @@
-const DATA_VERSION=4;
-const todayISO=()=>new Date().toISOString().slice(0,10);
-const emptyData={version:DATA_VERSION,products:[],transactions:[]};
-let language=localStorage.getItem('khoflow-language')||'vi';
-const messages={
-  vi:{dashboard:'Tổng quan',inventory:'Kho hàng',issue:'Phiếu xuất',loan:'Đơn mượn',receive:'Phiếu nhập',history:'Nhật ký',notes:'Hướng dẫn',recordIssue:'Ghi xuất kho',recordReceive:'Ghi nhập kho',recordLoan:'Ghi đơn mượn',cancel:'Hủy',save:'Lưu giao dịch',addLine:'＋ Thêm mặt hàng',remove:'Xóa',loanOrder:'Đơn mượn (cho bộ phận khác mượn hàng)',borrowerDepartment:'Bộ phận mượn',searchProduct:'Tìm hàng theo tên...',selectProduct:'Chọn hàng hóa',quantity:'Số lượng',unit:'Đơn vị',dateOut:'Ngày lấy hàng',dateIn:'Ngày nhập hàng',receiver:'Người nhận',deliverer:'Người giao',supplier:'Nguồn hàng / nhà cung cấp',note:'Ghi chú',noProduct:'Chưa có hàng hóa',noTransaction:'Chưa có giao dịch',noIssue:'Chưa có lịch sử xuất kho',noReceive:'Chưa có lịch sử nhập kho',noLoan:'Chưa có đơn mượn',savedOut:'Đã ghi nhận xuất kho',savedIn:'Đã ghi nhận nhập kho',savedLoan:'Đã ghi nhận đơn mượn',requiredProduct:'Vui lòng chọn ít nhất một mặt hàng',requiredPeople:'Vui lòng nhập người nhận và người giao',requiredDepartment:'Vui lòng nhập bộ phận mượn',notEnough:'Không đủ tồn kho'},zh:{dashboard:'总览',inventory:'库存',issue:'出库单',loan:'借用单',receive:'入库单',history:'日志',notes:'使用说明',recordIssue:'登记出库',recordReceive:'登记入库',recordLoan:'登记借用单',cancel:'取消',save:'保存交易',addLine:'＋ 添加商品',remove:'删除',loanOrder:'借用单（借给其他部门）',borrowerDepartment:'借用部门',searchProduct:'按名称搜索商品...',selectProduct:'选择商品',quantity:'数量',unit:'单位',dateOut:'取货日期',dateIn:'入库日期',receiver:'领取人',deliverer:'交付人',supplier:'货源 / 供应商',note:'备注',noProduct:'暂无商品',noTransaction:'暂无交易',noIssue:'暂无出库记录',noReceive:'暂无入库记录',noLoan:'暂无借用单',savedOut:'出库记录已保存',savedIn:'入库记录已保存',savedLoan:'借用单已保存',requiredProduct:'请至少选择一件商品',requiredPeople:'请输入领取人和交付人',requiredDepartment:'请输入借用部门',notEnough:'库存不足'}};
-const tr=key=>messages[language][key]||key;
-let db=JSON.parse(localStorage.getItem('khoflow-db')||'null');
-if(!db){db=emptyData}
-if(!Array.isArray(db.transactions))db.transactions=[];
-if(!Array.isArray(db.products))db.products=[];
-if(db.version!==DATA_VERSION){db={...db,version:DATA_VERSION,products:db.products,transactions:db.transactions.map(t=>({...t,loan:Boolean(t.loan),borrowerDepartment:t.borrowerDepartment||'',orderId:t.orderId||t.id}))};localStorage.setItem('khoflow-db',JSON.stringify(db))}
-if(!db.transactions)db.transactions=[]; if(!db.products)db.products=[];
-const save=()=>localStorage.setItem('khoflow-db',JSON.stringify(db));
-const qs=s=>document.querySelector(s); const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
-const dateText=d=>new Intl.DateTimeFormat(language==='zh'?'zh-CN':'vi-VN').format(new Date(`${d}T00:00:00`));
-const status=p=>p.qty===0?['out',language==='zh'?'缺货':'Hết hàng']:p.qty<=p.min?['low',language==='zh'?'库存低':'Sắp hết']:['ok',language==='zh'?'充足':'Đủ hàng'];
-function productRow(p,preview=false){const [kind,label]=status(p);return `<tr><td><div class="product-cell"><span class="product-thumb">${esc(p.name.slice(0,1).toUpperCase())}</span><b>${esc(p.name)}</b></div></td>${preview?'':`<td class="muted">${esc(p.sku)}</td>`}<td><b>${p.qty}</b></td><td class="muted">${esc(p.unit)}</td>${preview?'':'<td>'+p.min+'</td>'}<td><span class="badge ${kind}">${label}</span></td><td><button class="row-actions" data-edit-product="${p.id}">•••</button></td></tr>`}
-function transactionRow(t){const people=t.type==='out'?(t.loan?`${language==='zh'?'借用部门':'Bộ phận mượn'}: ${esc(t.borrowerDepartment)} · ${language==='zh'?'领取人':'Nhận'}: ${esc(t.receiver)} · ${language==='zh'?'交付人':'Giao'}: ${esc(t.deliverer)}`:`${language==='zh'?'领取人':'Nhận'}: ${esc(t.receiver)} · ${language==='zh'?'交付人':'Giao'}: ${esc(t.deliverer)}`):'—';return `<tr><td>${dateText(t.date)}</td><td><span class="badge ${t.type==='out'?'out':'in'}">${t.type==='out'?(language==='zh'?'↑ 出库':'↑ Xuất'):(language==='zh'?'↓ 入库':'↓ Nhập')}</span>${t.loan?`<span class="badge loan">${language==='zh'?'借用':'Mượn'}</span>`:''}</td><td><b>${esc(t.productName)}</b></td><td><b>${t.qty}</b> ${esc(t.unit)}</td><td class="muted">${people}</td><td class="muted">${esc(t.note||'—')}</td></tr>`}
-function receiveRow(t){return `<tr><td>${dateText(t.date)}</td><td><b>${esc(t.productName)}</b></td><td><b>${t.qty}</b> ${esc(t.unit)}</td><td class="muted">${esc(t.note||'—')}</td></tr>`}
-function loanRow(t){return `<tr><td>${dateText(t.date)}</td><td><b>${esc(t.borrowerDepartment)}</b></td><td><b>${esc(t.productName)}</b></td><td><b>${t.qty}</b> ${esc(t.unit)}</td><td class="muted">${esc(t.receiver)}</td><td class="muted">${esc(t.deliverer)}</td><td class="muted">${esc(t.note||'—')}</td></tr>`}
-function render(){const total=db.products.reduce((n,p)=>n+p.qty,0), low=db.products.filter(p=>p.qty<=p.min).length, today=db.transactions.filter(t=>t.date===todayISO()).length;qs('#today-label').textContent=new Intl.DateTimeFormat(language==='zh'?'zh-CN':'vi-VN',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'}).format(new Date()).toUpperCase();qs('#stat-products').textContent=db.products.length;qs('#stat-quantity').textContent=total;qs('#stat-low').textContent=low;qs('#stat-today').textContent=today;qs('#inventory-preview').innerHTML=db.products.slice(0,5).map(p=>productRow(p,true)).join('')||emptyRow(6,tr('noProduct'));qs('#inventory-table').innerHTML=db.products.map(p=>productRow(p)).join('')||emptyRow(7,tr('noProduct'));const outs=db.transactions.filter(t=>t.type==='out');const ins=db.transactions.filter(t=>t.type==='in');const loans=outs.filter(t=>t.loan);qs('#issues-table').innerHTML=outs.map(transactionRow).join('')||emptyRow(6,tr('noIssue'));qs('#loans-table').innerHTML=loans.map(loanRow).join('')||emptyRow(7,tr('noLoan'));qs('#receives-table').innerHTML=ins.map(receiveRow).join('')||emptyRow(4,tr('noReceive'));qs('#history-table').innerHTML=db.transactions.map(transactionRow).join('')||emptyRow(6,tr('noTransaction'));qs('#activity-list').innerHTML=db.transactions.slice(0,4).map(t=>`<div class="activity"><span class="activity-icon ${t.type==='out'?'orange':''}">${t.type==='out'?'↑':'↓'}</span><div><b>${t.type==='out'?(language==='zh'?'已出库':'Đã xuất'):(language==='zh'?'已入库':'Đã nhập')} ${t.qty} ${esc(t.unit)} ${esc(t.productName)}</b><small>${dateText(t.date)} · ${t.type==='out'?(t.loan?`${language==='zh'?'借用':'Mượn'}: ${esc(t.borrowerDepartment)}`:`${language==='zh'?'领取人':'Người nhận'}: ${esc(t.receiver)}`):''}</small></div></div>`).join('')||`<div class="empty">${language==='zh'?'暂无活动':'Chưa có hoạt động'}</div>`;filterTables()}
-function emptyRow(cols,text){return `<tr><td colspan="${cols}" class="muted empty-cell">${text}</td></tr>`}
-function filterTables(){const iq=(qs('#inventory-search')?.value||'').toLowerCase();if(qs('#inventory-table'))qs('#inventory-table').innerHTML=db.products.filter(p=>p.name.toLowerCase().includes(iq)).map(p=>productRow(p)).join('')||emptyRow(7,language==='zh'?'未找到商品':'Không tìm thấy mặt hàng');const q=(qs('#history-search')?.value||'').toLowerCase(),type=qs('#history-type')?.value||'all';if(qs('#history-table'))qs('#history-table').innerHTML=db.transactions.filter(t=>(type==='all'||t.type===type)&&`${t.productName} ${t.receiver} ${t.deliverer} ${t.supplier} ${t.borrowerDepartment} ${t.note}`.toLowerCase().includes(q)).map(transactionRow).join('')||emptyRow(6,language==='zh'?'未找到交易':'Không tìm thấy giao dịch')}
-function showToast(msg){const t=qs('#toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500)}
-function productOptions(selected=''){return db.products.map(p=>`<option value="${p.id}" ${String(p.id)===String(selected)?'selected':''}>${esc(p.name)} (${p.qty} ${esc(p.unit)})</option>`).join('')}
-function openModal(type,id=null){if(type==='product'){const existing=id?db.products.find(p=>p.id===id):null;qs('#modal-root').innerHTML=`<div class="modal-backdrop"><div class="modal"><div class="modal-head"><h3>${existing?'Sửa mặt hàng':'Thêm mặt hàng'}</h3><button class="close-btn" data-close>×</button></div><div class="modal-body"><div class="field"><label>TÊN HÀNG</label><input id="f-name" placeholder="Ví dụ: Nước rửa tay" value="${esc(existing?.name||'')}"></div><div class="form-row"><div class="field"><label>MÃ HÀNG</label><input id="f-sku" placeholder="HH-004" value="${esc(existing?.sku||'')}"></div><div class="field"><label>ĐƠN VỊ</label><input id="f-unit" placeholder="chai, thùng, hộp..." value="${esc(existing?.unit||'')}"></div></div><div class="field"><label>SỐ LƯỢNG BAN ĐẦU</label><input id="f-qty" type="number" min="0" value="${existing?.qty??0}"></div><div class="field"><label>ĐỊNH MỨC CẢNH BÁO</label><input id="f-min" type="number" min="0" value="${existing?.min??1}"></div><div class="modal-actions"><button class="cancel-btn" data-close>Hủy</button><button class="primary-btn" id="save-modal">${existing?'Cập nhật':'Lưu mặt hàng'}</button></div></div></div></div>`;qs('#save-modal').onclick=()=>saveProduct(id);return}
-const isOut=type==='issue', title=isOut?tr('recordIssue'):tr('recordReceive'), date=todayISO();qs('#modal-root').innerHTML=`<div class="modal-backdrop"><div class="modal transaction-modal"><div class="modal-head"><h3>${title}</h3><button class="close-btn" data-close>×</button></div><div class="modal-body"><div id="transaction-lines"></div><button class="outline-btn add-line-btn" id="add-line">${tr('addLine')}</button><div class="field"><label>${isOut?tr('dateOut'):tr('dateIn')}</label><input id="f-date" type="date" value="${date}"></div>${isOut?`<div class="form-row"><div class="field"><label>${tr('receiver')}</label><input id="f-receiver" placeholder="${tr('receiver')}"></div><div class="field"><label>${tr('deliverer')}</label><input id="f-deliverer" placeholder="${tr('deliverer')}"></div></div><label class="checkbox-field"><input id="f-loan" type="checkbox"> <span>${tr('loanOrder')}</span></label><div class="field borrower-department-field" id="borrower-department-field" style="display:none"><label>${tr('borrowerDepartment')}</label><input id="f-borrower-department" placeholder="${tr('borrowerDepartment')}"></div>`:''}<div class="field"><label>${tr('note')}</label><input id="f-note" placeholder="${tr('note')}"></div><div class="modal-actions"><button class="cancel-btn" data-close>${tr('cancel')}</button><button class="primary-btn" id="save-modal">${tr('save')}</button></div></div></div></div>`;
-const addLine=()=>{const row=document.createElement('div');row.className='transaction-line';row.innerHTML=`<div class="field product-field"><label>${tr('selectProduct')}</label><input class="transaction-product" list="product-list" placeholder="${tr('searchProduct')}"><input class="transaction-product-id" type="hidden"><datalist id="product-list">${db.products.map(p=>`<option value="${esc(p.name)}">${esc(p.name)} (${p.qty} ${esc(p.unit)})</option>`).join('')}</datalist></div><div class="field"><label>${tr('quantity')}</label><input class="transaction-qty" type="number" min="1" value="1"></div><div class="field"><label>${tr('unit')}</label><input class="transaction-unit" readonly></div><button type="button" class="remove-line" title="${tr('remove')}">×</button>`;
-  const productInput=row.querySelector('.transaction-product'), unitInput=row.querySelector('.transaction-unit');
-  productInput.addEventListener('input',()=>{const p=db.products.find(x=>x.name.toLowerCase()===productInput.value.trim().toLowerCase());row.querySelector('.transaction-product-id').value=p?.id||'';unitInput.value=p?.unit||''});
-  row.querySelector('.remove-line').onclick=()=>{if(document.querySelectorAll('.transaction-line').length>1)row.remove()};
-  qs('#transaction-lines').append(row);
+const DATA_VERSION = 4;
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const emptyData = { version: DATA_VERSION, products: [], transactions: [] };
+let language = localStorage.getItem("khoflow-language") || "vi";
+const messages = {
+  vi: {
+    dashboard: "Tổng quan",
+    inventory: "Kho hàng",
+    issue: "Phiếu xuất",
+    loan: "Đơn mượn",
+    receive: "Phiếu nhập",
+    history: "Nhật ký",
+    notes: "Hướng dẫn",
+    recordIssue: "Ghi xuất kho",
+    recordReceive: "Ghi nhập kho",
+    recordLoan: "Ghi đơn mượn",
+    cancel: "Hủy",
+    save: "Lưu giao dịch",
+    addLine: "＋ Thêm mặt hàng",
+    remove: "Xóa",
+    loanOrder: "Đơn mượn (cho bộ phận khác mượn hàng)",
+    borrowerDepartment: "Bộ phận mượn",
+    searchProduct: "Tìm hàng theo tên...",
+    selectProduct: "Chọn hàng hóa",
+    quantity: "Số lượng",
+    unit: "Đơn vị",
+    dateOut: "Ngày lấy hàng",
+    dateIn: "Ngày nhập hàng",
+    receiver: "Người nhận",
+    deliverer: "Người giao",
+    supplier: "Nguồn hàng / nhà cung cấp",
+    note: "Ghi chú",
+    noProduct: "Chưa có hàng hóa",
+    noTransaction: "Chưa có giao dịch",
+    noIssue: "Chưa có lịch sử xuất kho",
+    noReceive: "Chưa có lịch sử nhập kho",
+    noLoan: "Chưa có đơn mượn",
+    savedOut: "Đã ghi nhận xuất kho",
+    savedIn: "Đã ghi nhận nhập kho",
+    savedLoan: "Đã ghi nhận đơn mượn",
+    requiredProduct: "Vui lòng chọn ít nhất một mặt hàng",
+    requiredPeople: "Vui lòng nhập người nhận và người giao",
+    requiredDepartment: "Vui lòng nhập bộ phận mượn",
+    notEnough: "Không đủ tồn kho",
+  },
+  zh: {
+    dashboard: "总览",
+    inventory: "库存",
+    issue: "出库单",
+    loan: "借用单",
+    receive: "入库单",
+    history: "日志",
+    notes: "使用说明",
+    recordIssue: "登记出库",
+    recordReceive: "登记入库",
+    recordLoan: "登记借用单",
+    cancel: "取消",
+    save: "保存交易",
+    addLine: "＋ 添加商品",
+    remove: "删除",
+    loanOrder: "借用单（借给其他部门）",
+    borrowerDepartment: "借用部门",
+    searchProduct: "按名称搜索商品...",
+    selectProduct: "选择商品",
+    quantity: "数量",
+    unit: "单位",
+    dateOut: "取货日期",
+    dateIn: "入库日期",
+    receiver: "领取人",
+    deliverer: "交付人",
+    supplier: "货源 / 供应商",
+    note: "备注",
+    noProduct: "暂无商品",
+    noTransaction: "暂无交易",
+    noIssue: "暂无出库记录",
+    noReceive: "暂无入库记录",
+    noLoan: "暂无借用单",
+    savedOut: "出库记录已保存",
+    savedIn: "入库记录已保存",
+    savedLoan: "借用单已保存",
+    requiredProduct: "请至少选择一件商品",
+    requiredPeople: "请输入领取人和交付人",
+    requiredDepartment: "请输入借用部门",
+    notEnough: "库存不足",
+  },
 };
-addLine();qs('#add-line').onclick=addLine;if(isOut)qs('#f-loan').onchange=()=>{qs('#borrower-department-field').style.display=qs('#f-loan').checked?'grid':'none'};qs('#save-modal').onclick=()=>saveTransaction(isOut)}
-function saveProduct(id=null){const name=qs('#f-name').value.trim(),unit=qs('#f-unit').value.trim();const qty=Number(qs('#f-qty').value),min=Number(qs('#f-min').value);if(!name||!unit)return showToast('Vui lòng nhập tên hàng và đơn vị');if(!Number.isInteger(qty)||qty<0||!Number.isInteger(min)||min<0)return showToast('Số lượng và định mức phải là số nguyên không âm');const data={name,sku:qs('#f-sku').value.trim()||`HH-${String(db.products.length+1).padStart(3,'0')}`,unit,qty,min};if(id){const product=db.products.find(p=>p.id===id);if(!product)return showToast('Không tìm thấy mặt hàng');Object.assign(product,data);showToast('Đã cập nhật mặt hàng')}else{db.products.push({id:Date.now(),...data});showToast('Đã thêm mặt hàng')}save();qs('#modal-root').innerHTML='';render()}
-function saveTransaction(isOut){const rows=[...document.querySelectorAll('.transaction-line')].map(row=>{const p=db.products.find(x=>x.id===+row.querySelector('.transaction-product-id').value),qty=Number(row.querySelector('.transaction-qty').value);return {p,qty}});if(rows.some(r=>!r.p||!Number.isInteger(r.qty)||r.qty<1))return showToast(tr('requiredProduct'));const totals=rows.reduce((map,{p,qty})=>{map[p.id]=(map[p.id]||0)+qty;return map},{});if(isOut){const shortage=Object.entries(totals).find(([id,qty])=>qty>db.products.find(p=>p.id===+id).qty);if(shortage){const p=db.products.find(x=>x.id===+shortage[0]);return showToast(`${tr('notEnough')}: ${p.name}`)}}if(isOut&&(!qs('#f-receiver').value.trim()||!qs('#f-deliverer').value.trim()))return showToast(tr('requiredPeople'));const loan=isOut&&qs('#f-loan')?.checked,borrowerDepartment=loan?qs('#f-borrower-department').value.trim():'';if(loan&&!borrowerDepartment)return showToast(tr('requiredDepartment'));const orderId=Date.now(),common={type:isOut?'out':'in',date:qs('#f-date').value,loan:Boolean(loan),borrowerDepartment,receiver:isOut?qs('#f-receiver').value.trim():'',deliverer:isOut?qs('#f-deliverer').value.trim():'',note:qs('#f-note').value.trim(),orderId};rows.forEach(({p,qty},index)=>{p.qty+=isOut?-qty:qty;db.transactions.unshift({id:orderId+index,productId:p.id,productName:p.name,qty,unit:p.unit,...common})});save();qs('#modal-root').innerHTML='';render();showToast(isOut?(loan?tr('savedLoan'):tr('savedOut')):tr('savedIn'))}
-function applyLanguage(){document.documentElement.lang=language==='zh'?'zh':'vi';const staticNodes=[...document.querySelectorAll('body *')].filter(el=>el.children.length===0);staticNodes.forEach(el=>{if(!el.dataset.vi)el.dataset.vi=el.textContent.trim()});if(language==='vi')staticNodes.forEach(el=>{el.textContent=el.dataset.vi});const labels={dashboard:'dashboard',inventory:'inventory',issue:'issue',loan:'loan',receive:'receive',history:'history',notes:'notes'};document.querySelectorAll('.nav-item').forEach(n=>{const key=labels[n.dataset.view];const icon=n.querySelector('span')?.textContent||'';n.textContent='';n.append(icon,document.createTextNode(' '),tr(key))});qs('#language-toggle').textContent=language==='zh'?'VI / 中':'中 / VI';const active=document.querySelector('.nav-item.active')?.dataset.view;if(active)qs('#page-title').textContent=tr(labels[active]);const staticMap=language==='zh'?{'Theo dõi kho thật đơn giản ✦':'轻松管理库存 ✦','Ghi lại từng lần nhận và giao đồ dùng trong kho.':'记录每次入库和出库。','↓ Nhập hàng':'↓ 入库','↑ Xuất hàng':'↑ 出库','Loại hàng đang quản lý':'管理中的商品种类','Tồn kho':'库存','mặt hàng':'种商品','Tổng số lượng tồn':'库存总量','Hiện tại':'当前','đơn vị hàng hóa':'件商品','Sắp hết hàng':'库存不足','Cần xử lý':'需要处理','mặt hàng dưới định mức':'低于警戒线的商品','Giao dịch hôm nay':'今日交易','Nhật ký':'日志','lần nhập / xuất kho':'次入库 / 出库','Tình trạng tồn kho':'库存状态','Số lượng hàng đang có trong kho':'当前库存数量','Xem tất cả →':'查看全部 →','Giao dịch gần đây':'最近交易','Những thay đổi mới nhất':'最新变更','Xem lịch sử':'查看日志','Danh sách tồn kho':'库存清单','Nhập Excel sẽ thay thế toàn bộ dữ liệu tồn kho hiện tại.':'导入 Excel 将替换当前库存数据。','↓ Nhập Excel':'↓ 导入 Excel','↑ Xuất Excel':'↑ 导出 Excel','＋ Thêm mặt hàng':'＋ 添加商品','Định dạng Excel:':'Excel 格式：','Tìm tên hàng...':'搜索商品名称...','Mã hàng':'商品编号','Định mức':'警戒线','Trạng thái':'状态','Phiếu xuất kho':'出库单','Ghi chép khi lấy đồ dùng ra khỏi kho.':'记录从仓库取出物品。','Phiếu nhập kho':'入库单','Ghi nhận hàng mới nhập vào kho.':'记录新入库商品。','Nhật ký giao dịch':'交易日志','Toàn bộ lịch sử nhập và xuất kho.':'全部入库和出库记录。','Xuất CSV':'导出 CSV','Tất cả giao dịch':'全部交易','Xuất kho':'出库','Nhập kho':'入库','Hướng dẫn sử dụng':'使用说明','Lưu ý':'注意'}:{'軽':'軽'};document.querySelectorAll('body *').forEach(el=>{if(el.children.length===0){const value=el.textContent.trim();if(staticMap[value])el.textContent=staticMap[value]}});document.querySelectorAll('[placeholder]').forEach(el=>{if(language==='zh'&&el.placeholder==='Tìm tên hàng...')el.placeholder='搜索商品名称...'});}
-function applyLanguage(){const labels={dashboard:'dashboard',inventory:'inventory',issue:'issue',loan:'loan',receive:'receive',history:'history',notes:'notes'};const translations=language==='zh'?{'Tổng quan':'总览','Kho hàng':'库存','Phiếu xuất':'出库单','Đơn mượn':'借用单','Phiếu nhập':'入库单','Nhật ký':'日志','Hướng dẫn':'使用说明','Kho bộ phận':'部门仓库','Dữ liệu lưu trên thiết bị':'数据保存在本设备','Người sử dụng':'用户','NHẬT KÝ KHO':'库存日志','Theo dõi kho thật đơn giản':'轻松管理库存','Theo dõi kho thật đơn giản ✦':'轻松管理库存 ✦','Theo dõi kho thật đơn giản ':'轻松管理库存 ','Ghi lại từng lần nhận và giao đồ dùng trong kho.':'记录每次入库和出库。','↓ Nhập hàng':'↓ 入库','↑ Xuất hàng':'↑ 出库','Loại hàng đang quản lý':'管理中的商品种类','Tồn kho':'库存','mặt hàng':'种商品','Tổng số lượng tồn':'库存总量','Hiện tại':'当前','đơn vị hàng hóa':'件商品','Sắp hết hàng':'库存不足','Cần xử lý':'需要处理','mặt hàng dưới định mức':'低于警戒线的商品','Giao dịch hôm nay':'今日交易','Nhật ký':'日志','lần nhập / xuất kho':'次入库 / 出库','Tình trạng tồn kho':'库存状态','Số lượng hàng đang có trong kho':'当前库存数量','Xem tất cả →':'查看全部 →','Giao dịch gần đây':'最近交易','Những thay đổi mới nhất':'最新变更','Xem lịch sử':'查看日志','Danh sách tồn kho':'库存清单','Nhập Excel sẽ thay thế toàn bộ dữ liệu tồn kho hiện tại.':'导入 Excel 将替换当前库存数据。','↓ Nhập Excel':'↓ 导入 Excel','↑ Xuất Excel':'↑ 导出 Excel','＋ Thêm mặt hàng':'＋ 添加商品','Định dạng Excel:':'Excel 格式：','sheet đầu tiên có các cột':'第一个工作表包含以下列','Tên hàng':'商品名称','TÊN HÀNG':'商品名称','Mã hàng':'商品编号','MÃ HÀNG':'商品编号','Đơn vị':'单位','ĐƠN VỊ':'单位','Số lượng tồn':'库存数量','SỐ LƯỢNG':'数量','Định mức':'警戒线','ĐỊNH MỨC':'警戒线','Trạng thái':'状态','TRẠNG THÁI':'状态','Khi nhập, dữ liệu trong file sẽ thay thế dữ liệu tồn kho hiện tại.':'导入后，文件数据将替换当前库存。','Tìm tên hàng...':'搜索商品名称...','Phiếu xuất kho':'出库单','Ghi chép khi lấy đồ dùng ra khỏi kho.':'记录从仓库取出物品。','Thông tin cần ghi:':'需要记录：','tên hàng, số lượng, đơn vị, người nhận, người giao và ngày lấy hàng. Nếu cấp cho bộ phận khác mượn, hãy tích':'商品名称、数量、单位、领取人、交付人和取货日期。如借给其他部门，请勾选','Đơn mượn':'借用单','Phiếu nhập kho':'入库单','Ghi nhận hàng mới nhập vào kho.':'记录新入库商品。','Nhập nhanh:':'快速入库：','chọn mặt hàng, số lượng và ngày nhập.':'选择商品、数量和入库日期。','Ngày nhập':'入库日期','HÀNG HÓA':'商品','Hàng hóa':'商品','Ghi chú':'备注','GHI CHÚ':'备注','BỘ PHẬN MƯỢN':'借用部门','NGƯỜI NHẬN':'领取人','NGƯỜI GIAO':'交付人','Ngày lấy':'取货日期','NGÀY LẤY':'取货日期','NGÀY NHẬP':'入库日期','Loại':'类型','LOẠI':'类型','Người liên quan':'相关人员','NGƯỜI LIÊN QUAN':'相关人员','Thời gian':'时间','THỜI GIAN':'时间','Toàn bộ lịch sử nhập và xuất kho.':'全部入库和出库记录。','Xuất CSV':'导出 CSV','Tất cả giao dịch':'全部交易','Hướng dẫn sử dụng':'使用说明','Lưu ý':'注意','Một vài nguyên tắc giúp dữ liệu kho luôn rõ ràng và an toàn.':'帮助保持库存数据清晰安全的原则。','Sao lưu định kỳ':'定期备份','Nhập Excel sẽ thay thế dữ liệu':'导入 Excel 将替换数据','Nhập và xuất đúng quy trình':'按流程入库和出库','Dùng offline đúng cách':'正确使用离线模式','Một thiết bị là nguồn dữ liệu chính':'一台设备作为主数据源','Kiểm tra trước khi chốt ngày':'关账前检查','Design by Sáng':'设计：Sáng','＋ Ghi xuất kho':'＋ 登记出库','＋ Ghi nhập kho':'＋ 登记入库','＋ Ghi đơn mượn':'＋ 登记借用单','Thông tin cần ghi':'需要记录','Các đơn xuất kho đã đánh dấu cho bộ phận khác mượn hàng.':'已标记为借给其他部门的出库单。','Lưu ý:':'注意：','hàng mượn đã được trừ khỏi tồn kho. Khi nhận lại hàng, hãy ghi một giao dịch nhập kho để cập nhật tồn.':'借用的商品已从库存中扣除。归还时请登记入库交易以更新库存。','Chưa có lịch sử xuất kho':'暂无出库记录','Chưa có lịch sử nhập kho':'暂无入库记录','Chưa có đơn mượn':'暂无借用单','Chưa có giao dịch':'暂无交易','Chưa có hàng hóa':'暂无商品'}:{};document.documentElement.lang=language==='zh'?'zh':'vi';document.querySelectorAll('.nav-item').forEach(n=>{const key=labels[n.dataset.view],icon=n.querySelector('span')?.textContent||'';n.textContent='';n.append(icon,document.createTextNode(' '),tr(key))});qs('#language-toggle').textContent=language==='zh'?'VI / 中':'中 / VI';const active=document.querySelector('.nav-item.active')?.dataset.view;if(active)qs('#page-title').textContent=tr(labels[active]);const walker=document.createTreeWalker(document.body,NodeFilter.SHOW_TEXT);const nodes=[];while(walker.nextNode())nodes.push(walker.currentNode);nodes.forEach(node=>{if(!node._sourceText)node._sourceText=node.nodeValue.trim();const source=node._sourceText;if(source)node.nodeValue=node.nodeValue.replace(source,translations[source]||source)});if(language==='zh'){if(qs('#dashboard-view h2'))qs('#dashboard-view h2').innerHTML='轻松管理库存 <span>✦</span>';if(qs('#issue-view h2'))qs('#issue-view h2').textContent='出库单';if(qs('#issue-view .section-toolbar .primary-btn'))qs('#issue-view .section-toolbar .primary-btn').textContent='＋ 登记出库';if(qs('#issue-view .form-hint'))qs('#issue-view .form-hint').innerHTML='<b>需要记录：</b>商品名称、数量、单位、领取人、交付人和取货日期。如借给其他部门，请勾选 <b>借用单</b>。';if(qs('#receive-view h2'))qs('#receive-view h2').textContent='入库单';if(qs('#receive-view .section-toolbar .primary-btn'))qs('#receive-view .section-toolbar .primary-btn').textContent='＋ 登记入库';if(qs('#loan-view h2'))qs('#loan-view h2').textContent='借用单';if(qs('#loan-view .form-hint'))qs('#loan-view .form-hint').innerHTML='<b>注意：</b>借用的商品已从库存中扣除。归还时请登记入库交易以更新库存。';}document.querySelectorAll('[placeholder]').forEach(el=>{if(!el.dataset.sourcePlaceholder)el.dataset.sourcePlaceholder=el.placeholder;el.placeholder=language==='zh'?({'Tìm tên hàng...':'搜索商品名称...','Tìm hàng, người nhận, người giao...':'搜索商品、领取人、交付人...'}[el.dataset.sourcePlaceholder]||el.dataset.sourcePlaceholder):el.dataset.sourcePlaceholder});}
-function toggleLanguage(){language=language==='vi'?'zh':'vi';localStorage.setItem('khoflow-language',language);location.reload()}
-const baseApplyLanguage=applyLanguage;
-applyLanguage=()=>{baseApplyLanguage();const footer=qs('#site-footer');if(footer)footer.textContent=language==='zh'?'设计：阮含光':'Design by Sáng';if(language==='zh'){const noteTranslations=[['定期备份','每天结束或每次盘点后，请进入 库存 → 导出 Excel，并至少在两个地方保存备份文件，例如 iPad 和 Google Drive。'],['导入 Excel 将替换数据','只有在希望将文件作为正式库存数据时才使用 导入 Excel。导入前请先导出备份，以便误选文件时恢复。'],['按流程入库和出库','入库会增加数量；出库会减少数量。不要重复记录同一笔交易。如有错误，请核对日志并用相反交易进行调整。'],['正确使用离线模式','至少联网打开网站一次，让 PWA 完成数据加载。离线时不要清除浏览器数据，也不要使用隐私浏览模式。'],['一台设备作为主数据源','数据目前保存在设备浏览器中。使用多个设备时不会自动同步；请使用一台主 iPad，并通过 Excel 文件传输数据。'],['关账前检查','将总览页面的库存总量与实际库存核对，检查当天交易，并在关库前导出一份 Excel 文件。']];document.querySelectorAll('#notes-view .note-card').forEach((card,index)=>{const [title,description]=noteTranslations[index]||[];if(title)card.querySelector('h3').textContent=title;if(description)card.querySelector('p').textContent=description})}};
-function navigate(view){document.querySelectorAll('.view').forEach(v=>v.classList.remove('active-view'));qs(`#${view}-view`).classList.add('active-view');document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.view===view));qs('#page-title').textContent={dashboard:tr('dashboard'),inventory:tr('inventory'),issue:tr('issue'),loan:tr('loan'),receive:tr('receive'),history:tr('history'),notes:tr('notes')}[view]}
-function inventoryRows(){return db.products.map(p=>({'Tên hàng':p.name,'Mã hàng':p.sku,'Đơn vị':p.unit,'Số lượng tồn':p.qty,'Định mức':p.min}))}
-function historyRows(){return db.transactions.map(t=>({'Ngày':t.date,'Loại':t.type==='out'?'Xuất kho':'Nhập kho','Mượn':t.loan?'Có':'Không','Bộ phận mượn':t.borrowerDepartment||'','Tên hàng':t.productName,'Số lượng':t.qty,'Đơn vị':t.unit,'Người nhận':t.receiver||'','Người giao':t.deliverer||'','Nguồn hàng':t.supplier||'','Ghi chú':t.note||''}))}
-function exportXlsx(){if(!window.XLSX)return showToast('Chưa tải được thư viện Excel');const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(inventoryRows()),'Tồn kho');XLSX.utils.book_append_sheet(wb,XLSX.utils.json_to_sheet(historyRows()),'Lịch sử');XLSX.writeFile(wb,`backup-kho-${todayISO()}.xlsx`);showToast('Đã xuất file Excel backup')}
-function numberValue(row,keys,fallback=0){const key=keys.find(k=>row[k]!==undefined);const value=key?row[key]:fallback;const n=Number(String(value??'').replace(/[,\. ]/g,''));return Number.isFinite(n)?n:fallback}
-function textValue(row,keys,fallback=''){const key=keys.find(k=>row[k]!==undefined);return String(key?row[key]:fallback).trim()}
-function importXlsx(file){if(!window.XLSX)return showToast('Chưa tải được thư viện Excel');const reader=new FileReader();reader.onload=event=>{try{const wb=XLSX.read(event.target.result,{type:'array'}),sheet=wb.Sheets[wb.SheetNames.includes('Tồn kho')?'Tồn kho':wb.SheetNames[0]],rows=XLSX.utils.sheet_to_json(sheet,{defval:''});const products=rows.map((r,i)=>({id:Date.now()+i,name:textValue(r,['Tên hàng','Tên hàng hóa','name']),sku:textValue(r,['Mã hàng','SKU','sku'],`HH-${String(i+1).padStart(3,'0')}`),unit:textValue(r,['Đơn vị','unit'],'cái'),qty:numberValue(r,['Số lượng tồn','Số lượng','Tồn kho','qty']),min:numberValue(r,['Định mức','Mức tối thiểu','min'])})).filter(p=>p.name&&p.qty>=0&&p.min>=0);if(!products.length)throw new Error('Không tìm thấy dòng dữ liệu hợp lệ');const historySheet=wb.SheetNames.includes('Lịch sử')?wb.Sheets['Lịch sử']:null;const transactions=historySheet?XLSX.utils.sheet_to_json(historySheet,{defval:''}).map((r,i)=>({id:Date.now()+10000+i,type:textValue(r,['Loại','type']).toLowerCase().includes('xuất')?'out':'in',date:textValue(r,['Ngày','Ngày giao dịch','date'],todayISO()),productName:textValue(r,['Tên hàng','Tên hàng hóa','productName']),qty:numberValue(r,['Số lượng','qty']),unit:textValue(r,['Đơn vị','unit']),loan:textValue(r,['Mượn','loan']).toLowerCase().includes('có')||textValue(r,['Mượn','loan']).toLowerCase()==='true',borrowerDepartment:textValue(r,['Bộ phận mượn','borrowerDepartment']),receiver:textValue(r,['Người nhận','receiver']),deliverer:textValue(r,['Người giao','deliverer']),supplier:textValue(r,['Nguồn hàng','supplier']),note:textValue(r,['Ghi chú','note'])})).filter(t=>t.productName&&t.qty>0):[];db={version:DATA_VERSION,products,transactions};save();qs('#xlsx-file').value='';render();showToast(`Đã nhập ${products.length} mặt hàng từ Excel`)}catch(error){showToast(`Không thể nhập Excel: ${error.message}`)}};reader.readAsArrayBuffer(file)}
-function exportCSV(){const rows=[['Ngày','Loại','Mượn','Bộ phận mượn','Hàng hóa','Số lượng','Đơn vị','Người nhận','Người giao','Nguồn hàng','Ghi chú'],...db.transactions.map(t=>[t.date,t.type==='out'?'Xuất kho':'Nhập kho',t.loan?'Có':'Không',t.borrowerDepartment,t.productName,t.qty,t.unit,t.receiver,t.deliverer,t.supplier,t.note])];const blob=new Blob(['\ufeff'+rows.map(r=>r.map(v=>`"${String(v??'').replaceAll('"','""')}"`).join(',')).join('\n')],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='lich-su-kho.csv';a.click();URL.revokeObjectURL(a.href)}
-document.addEventListener('click',e=>{const nav=e.target.closest('[data-view]');if(nav)navigate(nav.dataset.view);const target=e.target.closest('[data-view-target]');if(target)navigate(target.dataset.viewTarget);const opener=e.target.closest('[data-open-modal]');if(opener)openModal(opener.dataset.openModal);if(e.target.closest('[data-close]'))qs('#modal-root').innerHTML='';const edit=e.target.closest('[data-edit-product]');if(edit)openModal('product',Number(edit.dataset.editProduct));if(e.target.id==='import-xlsx')qs('#xlsx-file').click();if(e.target.id==='export-xlsx'||e.target.id==='export-xlsx-history')exportXlsx();if(e.target.id==='export-history')exportCSV();if(e.target.id==='language-toggle')toggleLanguage();});
-qs('#xlsx-file')?.addEventListener('change',e=>{if(e.target.files[0])importXlsx(e.target.files[0])});
-['inventory-search','history-search','history-type'].forEach(id=>qs('#'+id)?.addEventListener('input',filterTables));render();
+const tr = (key) => messages[language][key] || key;
+let db = JSON.parse(localStorage.getItem("khoflow-db") || "null");
+if (!db) {
+  db = emptyData;
+}
+if (!Array.isArray(db.transactions)) db.transactions = [];
+if (!Array.isArray(db.products)) db.products = [];
+if (db.version !== DATA_VERSION) {
+  db = {
+    ...db,
+    version: DATA_VERSION,
+    products: db.products,
+    transactions: db.transactions.map((t) => ({
+      ...t,
+      loan: Boolean(t.loan),
+      borrowerDepartment: t.borrowerDepartment || "",
+      orderId: t.orderId || t.id,
+    })),
+  };
+  localStorage.setItem("khoflow-db", JSON.stringify(db));
+}
+if (!db.transactions) db.transactions = [];
+if (!db.products) db.products = [];
+const save = () => localStorage.setItem("khoflow-db", JSON.stringify(db));
+const qs = (s) => document.querySelector(s);
+const esc = (s) =>
+  String(s ?? "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;",
+      })[c],
+  );
+const dateText = (d) =>
+  new Intl.DateTimeFormat(language === "zh" ? "zh-CN" : "vi-VN").format(
+    new Date(`${d}T00:00:00`),
+  );
+const status = (p) =>
+  p.qty === 0
+    ? ["out", language === "zh" ? "缺货" : "Hết hàng"]
+    : p.qty <= p.min
+      ? ["low", language === "zh" ? "库存低" : "Sắp hết"]
+      : ["ok", language === "zh" ? "充足" : "Đủ hàng"];
+function productRow(p, preview = false) {
+  const [kind, label] = status(p);
+  return `<tr><td><div class="product-cell"><span class="product-thumb">${esc(p.name.slice(0, 1).toUpperCase())}</span><b>${esc(p.name)}</b></div></td>${preview ? "" : `<td class="muted">${esc(p.sku)}</td>`}<td><b>${p.qty}</b></td><td class="muted">${esc(p.unit)}</td>${preview ? "" : "<td>" + p.min + "</td>"}<td><span class="badge ${kind}">${label}</span></td><td><button class="row-actions" data-edit-product="${p.id}">•••</button></td></tr>`;
+}
+function transactionRow(t) {
+  const people =
+    t.type === "out"
+      ? t.loan
+        ? `${language === "zh" ? "借用部门" : "Bộ phận mượn"}: ${esc(t.borrowerDepartment)} · ${language === "zh" ? "领取人" : "Nhận"}: ${esc(t.receiver)} · ${language === "zh" ? "交付人" : "Giao"}: ${esc(t.deliverer)}`
+        : `${language === "zh" ? "领取人" : "Nhận"}: ${esc(t.receiver)} · ${language === "zh" ? "交付人" : "Giao"}: ${esc(t.deliverer)}`
+      : "—";
+  return `<tr><td>${dateText(t.date)}</td><td><span class="badge ${t.type === "out" ? "out" : "in"}">${t.type === "out" ? (language === "zh" ? "↑ 出库" : "↑ Xuất") : language === "zh" ? "↓ 入库" : "↓ Nhập"}</span>${t.loan ? `<span class="badge loan">${language === "zh" ? "借用" : "Mượn"}</span>` : ""}</td><td><b>${esc(t.productName)}</b></td><td><b>${t.qty}</b> ${esc(t.unit)}</td><td class="muted">${people}</td><td class="muted">${esc(t.note || "—")}</td></tr>`;
+}
+function receiveRow(t) {
+  return `<tr><td>${dateText(t.date)}</td><td><b>${esc(t.productName)}</b></td><td><b>${t.qty}</b> ${esc(t.unit)}</td><td class="muted">${esc(t.note || "—")}</td></tr>`;
+}
+function loanRow(t) {
+  return `<tr><td>${dateText(t.date)}</td><td><b>${esc(t.borrowerDepartment)}</b></td><td><b>${esc(t.productName)}</b></td><td><b>${t.qty}</b> ${esc(t.unit)}</td><td class="muted">${esc(t.receiver)}</td><td class="muted">${esc(t.deliverer)}</td><td class="muted">${esc(t.note || "—")}</td></tr>`;
+}
+function render() {
+  const total = db.products.reduce((n, p) => n + p.qty, 0),
+    low = db.products.filter((p) => p.qty <= p.min).length,
+    today = db.transactions.filter((t) => t.date === todayISO()).length;
+  qs("#today-label").textContent = new Intl.DateTimeFormat(
+    language === "zh" ? "zh-CN" : "vi-VN",
+    { weekday: "long", day: "2-digit", month: "2-digit", year: "numeric" },
+  )
+    .format(new Date())
+    .toUpperCase();
+  qs("#stat-products").textContent = db.products.length;
+  qs("#stat-quantity").textContent = total;
+  qs("#stat-low").textContent = low;
+  qs("#stat-today").textContent = today;
+  qs("#inventory-preview").innerHTML =
+    db.products
+      .slice(0, 5)
+      .map((p) => productRow(p, true))
+      .join("") || emptyRow(6, tr("noProduct"));
+  qs("#inventory-table").innerHTML =
+    db.products.map((p) => productRow(p)).join("") ||
+    emptyRow(7, tr("noProduct"));
+  const outs = db.transactions.filter((t) => t.type === "out");
+  const ins = db.transactions.filter((t) => t.type === "in");
+  const loans = outs.filter((t) => t.loan);
+  qs("#issues-table").innerHTML =
+    outs.map(transactionRow).join("") || emptyRow(6, tr("noIssue"));
+  qs("#loans-table").innerHTML =
+    loans.map(loanRow).join("") || emptyRow(7, tr("noLoan"));
+  qs("#receives-table").innerHTML =
+    ins.map(receiveRow).join("") || emptyRow(4, tr("noReceive"));
+  qs("#history-table").innerHTML =
+    db.transactions.map(transactionRow).join("") ||
+    emptyRow(6, tr("noTransaction"));
+  qs("#activity-list").innerHTML =
+    db.transactions
+      .slice(0, 4)
+      .map(
+        (t) =>
+          `<div class="activity"><span class="activity-icon ${t.type === "out" ? "orange" : ""}">${t.type === "out" ? "↑" : "↓"}</span><div><b>${t.type === "out" ? (language === "zh" ? "已出库" : "Đã xuất") : language === "zh" ? "已入库" : "Đã nhập"} ${t.qty} ${esc(t.unit)} ${esc(t.productName)}</b><small>${dateText(t.date)} · ${t.type === "out" ? (t.loan ? `${language === "zh" ? "借用" : "Mượn"}: ${esc(t.borrowerDepartment)}` : `${language === "zh" ? "领取人" : "Người nhận"}: ${esc(t.receiver)}`) : ""}</small></div></div>`,
+      )
+      .join("") ||
+    `<div class="empty">${language === "zh" ? "暂无活动" : "Chưa có hoạt động"}</div>`;
+  filterTables();
+}
+function emptyRow(cols, text) {
+  return `<tr><td colspan="${cols}" class="muted empty-cell">${text}</td></tr>`;
+}
+function filterTables() {
+  const iq = (qs("#inventory-search")?.value || "").toLowerCase();
+  if (qs("#inventory-table"))
+    qs("#inventory-table").innerHTML =
+      db.products
+        .filter((p) => p.name.toLowerCase().includes(iq))
+        .map((p) => productRow(p))
+        .join("") ||
+      emptyRow(7, language === "zh" ? "未找到商品" : "Không tìm thấy mặt hàng");
+  const q = (qs("#history-search")?.value || "").toLowerCase(),
+    type = qs("#history-type")?.value || "all";
+  if (qs("#history-table"))
+    qs("#history-table").innerHTML =
+      db.transactions
+        .filter(
+          (t) =>
+            (type === "all" || t.type === type) &&
+            `${t.productName} ${t.receiver} ${t.deliverer} ${t.supplier} ${t.borrowerDepartment} ${t.note}`
+              .toLowerCase()
+              .includes(q),
+        )
+        .map(transactionRow)
+        .join("") ||
+      emptyRow(
+        6,
+        language === "zh" ? "未找到交易" : "Không tìm thấy giao dịch",
+      );
+}
+function showToast(msg) {
+  const t = qs("#toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 2500);
+}
+function productOptions(selected = "") {
+  return db.products
+    .map(
+      (p) =>
+        `<option value="${p.id}" ${String(p.id) === String(selected) ? "selected" : ""}>${esc(p.name)} (${p.qty} ${esc(p.unit)})</option>`,
+    )
+    .join("");
+}
+function openModal(type, id = null) {
+  if (type === "product") {
+    const existing = id ? db.products.find((p) => p.id === id) : null;
+    qs("#modal-root").innerHTML =
+      `<div class="modal-backdrop"><div class="modal"><div class="modal-head"><h3>${existing ? "Sửa mặt hàng" : "Thêm mặt hàng"}</h3><button class="close-btn" data-close>×</button></div><div class="modal-body"><div class="field"><label>TÊN HÀNG</label><input id="f-name" placeholder="Ví dụ: Nước rửa tay" value="${esc(existing?.name || "")}"></div><div class="form-row"><div class="field"><label>MÃ HÀNG</label><input id="f-sku" placeholder="HH-004" value="${esc(existing?.sku || "")}"></div><div class="field"><label>ĐƠN VỊ</label><input id="f-unit" placeholder="chai, thùng, hộp..." value="${esc(existing?.unit || "")}"></div></div><div class="field"><label>SỐ LƯỢNG BAN ĐẦU</label><input id="f-qty" type="number" min="0" value="${existing?.qty ?? 0}"></div><div class="field"><label>ĐỊNH MỨC CẢNH BÁO</label><input id="f-min" type="number" min="0" value="${existing?.min ?? 1}"></div><div class="modal-actions"><button class="cancel-btn" data-close>Hủy</button><button class="primary-btn" id="save-modal">${existing ? "Cập nhật" : "Lưu mặt hàng"}</button></div></div></div></div>`;
+    qs("#save-modal").onclick = () => saveProduct(id);
+    return;
+  }
+  const isOut = type === "issue",
+    title = isOut ? tr("recordIssue") : tr("recordReceive"),
+    date = todayISO();
+  qs("#modal-root").innerHTML =
+    `<div class="modal-backdrop"><div class="modal transaction-modal"><div class="modal-head"><h3>${title}</h3><button class="close-btn" data-close>×</button></div><div class="modal-body"><div id="transaction-lines"></div><button class="outline-btn add-line-btn" id="add-line">${tr("addLine")}</button><div class="field"><label>${isOut ? tr("dateOut") : tr("dateIn")}</label><input id="f-date" type="date" value="${date}"></div>${isOut ? `<div class="form-row"><div class="field"><label>${tr("receiver")}</label><input id="f-receiver" placeholder="${tr("receiver")}"></div><div class="field"><label>${tr("deliverer")}</label><input id="f-deliverer" placeholder="${tr("deliverer")}"></div></div><label class="checkbox-field"><input id="f-loan" type="checkbox"> <span>${tr("loanOrder")}</span></label><div class="field borrower-department-field" id="borrower-department-field" style="display:none"><label>${tr("borrowerDepartment")}</label><input id="f-borrower-department" placeholder="${tr("borrowerDepartment")}"></div>` : ""}<div class="field"><label>${tr("note")}</label><input id="f-note" placeholder="${tr("note")}"></div><div class="modal-actions"><button class="cancel-btn" data-close>${tr("cancel")}</button><button class="primary-btn" id="save-modal">${tr("save")}</button></div></div></div></div>`;
+  const addLine = () => {
+    const row = document.createElement("div");
+    row.className = "transaction-line";
+    row.innerHTML = `<div class="field product-field"><label>${tr("selectProduct")}</label><input class="transaction-product" list="product-list" placeholder="${tr("searchProduct")}"><input class="transaction-product-id" type="hidden"><datalist id="product-list">${db.products.map((p) => `<option value="${esc(p.name)}">${esc(p.name)} (${p.qty} ${esc(p.unit)})</option>`).join("")}</datalist></div><div class="field"><label>${tr("quantity")}</label><input class="transaction-qty" type="number" min="1" value="1"></div><div class="field"><label>${tr("unit")}</label><input class="transaction-unit" readonly></div><button type="button" class="remove-line" title="${tr("remove")}">×</button>`;
+    const productInput = row.querySelector(".transaction-product"),
+      unitInput = row.querySelector(".transaction-unit");
+    productInput.addEventListener("input", () => {
+      const p = db.products.find(
+        (x) => x.name.toLowerCase() === productInput.value.trim().toLowerCase(),
+      );
+      row.querySelector(".transaction-product-id").value = p?.id || "";
+      unitInput.value = p?.unit || "";
+    });
+    row.querySelector(".remove-line").onclick = () => {
+      if (document.querySelectorAll(".transaction-line").length > 1)
+        row.remove();
+    };
+    qs("#transaction-lines").append(row);
+  };
+  addLine();
+  qs("#add-line").onclick = addLine;
+  if (isOut)
+    qs("#f-loan").onchange = () => {
+      qs("#borrower-department-field").style.display = qs("#f-loan").checked
+        ? "grid"
+        : "none";
+    };
+  qs("#save-modal").onclick = () => saveTransaction(isOut);
+}
+function saveProduct(id = null) {
+  const name = qs("#f-name").value.trim(),
+    unit = qs("#f-unit").value.trim();
+  const qty = Number(qs("#f-qty").value),
+    min = Number(qs("#f-min").value);
+  if (!name || !unit) return showToast("Vui lòng nhập tên hàng và đơn vị");
+  if (!Number.isInteger(qty) || qty < 0 || !Number.isInteger(min) || min < 0)
+    return showToast("Số lượng và định mức phải là số nguyên không âm");
+  const data = {
+    name,
+    sku:
+      qs("#f-sku").value.trim() ||
+      `HH-${String(db.products.length + 1).padStart(3, "0")}`,
+    unit,
+    qty,
+    min,
+  };
+  if (id) {
+    const product = db.products.find((p) => p.id === id);
+    if (!product) return showToast("Không tìm thấy mặt hàng");
+    Object.assign(product, data);
+    showToast("Đã cập nhật mặt hàng");
+  } else {
+    db.products.push({ id: Date.now(), ...data });
+    showToast("Đã thêm mặt hàng");
+  }
+  save();
+  qs("#modal-root").innerHTML = "";
+  render();
+}
+function saveTransaction(isOut) {
+  const rows = [...document.querySelectorAll(".transaction-line")].map(
+    (row) => {
+      const p = db.products.find(
+          (x) => x.id === +row.querySelector(".transaction-product-id").value,
+        ),
+        qty = Number(row.querySelector(".transaction-qty").value);
+      return { p, qty };
+    },
+  );
+  if (rows.some((r) => !r.p || !Number.isInteger(r.qty) || r.qty < 1))
+    return showToast(tr("requiredProduct"));
+  const totals = rows.reduce((map, { p, qty }) => {
+    map[p.id] = (map[p.id] || 0) + qty;
+    return map;
+  }, {});
+  if (isOut) {
+    const shortage = Object.entries(totals).find(
+      ([id, qty]) => qty > db.products.find((p) => p.id === +id).qty,
+    );
+    if (shortage) {
+      const p = db.products.find((x) => x.id === +shortage[0]);
+      return showToast(`${tr("notEnough")}: ${p.name}`);
+    }
+  }
+  if (
+    isOut &&
+    (!qs("#f-receiver").value.trim() || !qs("#f-deliverer").value.trim())
+  )
+    return showToast(tr("requiredPeople"));
+  const loan = isOut && qs("#f-loan")?.checked,
+    borrowerDepartment = loan ? qs("#f-borrower-department").value.trim() : "";
+  if (loan && !borrowerDepartment) return showToast(tr("requiredDepartment"));
+  const orderId = Date.now(),
+    common = {
+      type: isOut ? "out" : "in",
+      date: qs("#f-date").value,
+      loan: Boolean(loan),
+      borrowerDepartment,
+      receiver: isOut ? qs("#f-receiver").value.trim() : "",
+      deliverer: isOut ? qs("#f-deliverer").value.trim() : "",
+      note: qs("#f-note").value.trim(),
+      orderId,
+    };
+  rows.forEach(({ p, qty }, index) => {
+    p.qty += isOut ? -qty : qty;
+    db.transactions.unshift({
+      id: orderId + index,
+      productId: p.id,
+      productName: p.name,
+      qty,
+      unit: p.unit,
+      ...common,
+    });
+  });
+  save();
+  qs("#modal-root").innerHTML = "";
+  render();
+  showToast(isOut ? (loan ? tr("savedLoan") : tr("savedOut")) : tr("savedIn"));
+}
+function applyLanguage() {
+  document.documentElement.lang = language === "zh" ? "zh" : "vi";
+  const staticNodes = [...document.querySelectorAll("body *")].filter(
+    (el) => el.children.length === 0,
+  );
+  staticNodes.forEach((el) => {
+    if (!el.dataset.vi) el.dataset.vi = el.textContent.trim();
+  });
+  if (language === "vi")
+    staticNodes.forEach((el) => {
+      el.textContent = el.dataset.vi;
+    });
+  const labels = {
+    dashboard: "dashboard",
+    inventory: "inventory",
+    issue: "issue",
+    loan: "loan",
+    receive: "receive",
+    history: "history",
+    notes: "notes",
+  };
+  document.querySelectorAll(".nav-item").forEach((n) => {
+    const key = labels[n.dataset.view];
+    const icon = n.querySelector("span")?.textContent || "";
+    n.textContent = "";
+    n.append(icon, document.createTextNode(" "), tr(key));
+  });
+  qs("#language-toggle").textContent =
+    language === "zh" ? "VI / 中" : "中 / VI";
+  const active = document.querySelector(".nav-item.active")?.dataset.view;
+  if (active) qs("#page-title").textContent = tr(labels[active]);
+  const staticMap =
+    language === "zh"
+      ? {
+          "Theo dõi kho thật đơn giản ✦": "轻松管理库存 ✦",
+          "Ghi lại từng lần nhận và giao đồ dùng trong kho.":
+            "记录每次入库和出库。",
+          "↓ Nhập hàng": "↓ 入库",
+          "↑ Xuất hàng": "↑ 出库",
+          "Loại hàng đang quản lý": "管理中的商品种类",
+          "Tồn kho": "库存",
+          "mặt hàng": "种商品",
+          "Tổng số lượng tồn": "库存总量",
+          "Hiện tại": "当前",
+          "đơn vị hàng hóa": "件商品",
+          "Sắp hết hàng": "库存不足",
+          "Cần xử lý": "需要处理",
+          "mặt hàng dưới định mức": "低于警戒线的商品",
+          "Giao dịch hôm nay": "今日交易",
+          "Nhật ký": "日志",
+          "lần nhập / xuất kho": "次入库 / 出库",
+          "Tình trạng tồn kho": "库存状态",
+          "Số lượng hàng đang có trong kho": "当前库存数量",
+          "Xem tất cả →": "查看全部 →",
+          "Giao dịch gần đây": "最近交易",
+          "Những thay đổi mới nhất": "最新变更",
+          "Xem lịch sử": "查看日志",
+          "Danh sách tồn kho": "库存清单",
+          "Nhập Excel sẽ thay thế toàn bộ dữ liệu tồn kho hiện tại.":
+            "导入 Excel 将替换当前库存数据。",
+          "↓ Nhập Excel": "↓ 导入 Excel",
+          "↑ Xuất Excel": "↑ 导出 Excel",
+          "＋ Thêm mặt hàng": "＋ 添加商品",
+          "Định dạng Excel:": "Excel 格式：",
+          "Tìm tên hàng...": "搜索商品名称...",
+          "Mã hàng": "商品编号",
+          "Định mức": "警戒线",
+          "Trạng thái": "状态",
+          "Phiếu xuất kho": "出库单",
+          "Ghi chép khi lấy đồ dùng ra khỏi kho.": "记录从仓库取出物品。",
+          "Phiếu nhập kho": "入库单",
+          "Ghi nhận hàng mới nhập vào kho.": "记录新入库商品。",
+          "Nhật ký giao dịch": "交易日志",
+          "Toàn bộ lịch sử nhập và xuất kho.": "全部入库和出库记录。",
+          "Nhật ký giao dịch": "交易日志",
+          "Xuất CSV": "导出 CSV",
+          "Xuất Excel": "导出 Excel",
+          "Tất cả giao dịch": "全部交易",
+          "Xuất kho": "出库",
+          "Nhập kho": "入库",
+          "Hướng dẫn sử dụng": "使用说明",
+          "Lưu ý": "注意",
+        }
+      : { 軽: "軽" };
+  document.querySelectorAll("body *").forEach((el) => {
+    if (el.children.length === 0) {
+      const value = el.textContent.trim();
+      if (staticMap[value]) el.textContent = staticMap[value];
+    }
+  });
+  document.querySelectorAll("[placeholder]").forEach((el) => {
+    if (language === "zh" && el.placeholder === "Tìm tên hàng...")
+      el.placeholder = "搜索商品名称...";
+  });
+}
+function applyLanguage() {
+  const labels = {
+    dashboard: "dashboard",
+    inventory: "inventory",
+    issue: "issue",
+    loan: "loan",
+    receive: "receive",
+    history: "history",
+    notes: "notes",
+  };
+  const translations =
+    language === "zh"
+      ? {
+          "Tổng quan": "总览",
+          "Kho hàng": "库存",
+          "Phiếu xuất": "出库单",
+          "Đơn mượn": "借用单",
+          "Phiếu nhập": "入库单",
+          "Nhật ký": "日志",
+          "Hướng dẫn": "使用说明",
+          "Kho bộ phận": "部门仓库",
+          "Dữ liệu lưu trên thiết bị": "数据保存在本设备",
+          "Người sử dụng": "用户",
+          "NHẬT KÝ KHO": "库存日志",
+          "Theo dõi kho thật đơn giản": "轻松管理库存",
+          "Theo dõi kho thật đơn giản ✦": "轻松管理库存 ✦",
+          "Theo dõi kho thật đơn giản ": "轻松管理库存 ",
+          "Ghi lại từng lần nhận và giao đồ dùng trong kho.":
+            "记录每次入库和出库。",
+          "↓ Nhập hàng": "↓ 入库",
+          "↑ Xuất hàng": "↑ 出库",
+          "Loại hàng đang quản lý": "管理中的商品种类",
+          "Tồn kho": "库存",
+          "mặt hàng": "种商品",
+          "Tổng số lượng tồn": "库存总量",
+          "Hiện tại": "当前",
+          "đơn vị hàng hóa": "件商品",
+          "Sắp hết hàng": "库存不足",
+          "Cần xử lý": "需要处理",
+          "mặt hàng dưới định mức": "低于警戒线的商品",
+          "Giao dịch hôm nay": "今日交易",
+          "Nhật ký": "日志",
+          "lần nhập / xuất kho": "次入库 / 出库",
+          "Tình trạng tồn kho": "库存状态",
+          "Số lượng hàng đang có trong kho": "当前库存数量",
+          "Xem tất cả →": "查看全部 →",
+          "Giao dịch gần đây": "最近交易",
+          "Những thay đổi mới nhất": "最新变更",
+          "Xem lịch sử": "查看日志",
+          "Danh sách tồn kho": "库存清单",
+          "Nhập Excel sẽ thay thế toàn bộ dữ liệu tồn kho hiện tại.":
+            "导入 Excel 将替换当前库存数据。",
+          "↓ Nhập Excel": "↓ 导入 Excel",
+          "↑ Xuất Excel": "↑ 导出 Excel",
+          "＋ Thêm mặt hàng": "＋ 添加商品",
+          "Định dạng Excel:": "Excel 格式：",
+          "sheet đầu tiên có các cột": "第一个工作表包含以下列",
+          "Tên hàng": "商品名称",
+          "TÊN HÀNG": "商品名称",
+          "Mã hàng": "商品编号",
+          "MÃ HÀNG": "商品编号",
+          "Đơn vị": "单位",
+          "ĐƠN VỊ": "单位",
+          "Số lượng tồn": "库存数量",
+          "SỐ LƯỢNG": "数量",
+          "Định mức": "警戒线",
+          "ĐỊNH MỨC": "警戒线",
+          "Trạng thái": "状态",
+          "TRẠNG THÁI": "状态",
+          "Khi nhập, dữ liệu trong file sẽ thay thế dữ liệu tồn kho hiện tại.":
+            "导入后，文件数据将替换当前库存。",
+          "Tìm tên hàng...": "搜索商品名称...",
+          "Phiếu xuất kho": "出库单",
+          "Ghi chép khi lấy đồ dùng ra khỏi kho.": "记录从仓库取出物品。",
+          "Thông tin cần ghi:": "需要记录：",
+          "tên hàng, số lượng, đơn vị, người nhận, người giao và ngày lấy hàng. Nếu cấp cho bộ phận khác mượn, hãy tích":
+            "商品名称、数量、单位、领取人、交付人和取货日期。如借给其他部门，请勾选",
+          "Đơn mượn": "借用单",
+          "Phiếu nhập kho": "入库单",
+          "Ghi nhận hàng mới nhập vào kho.": "记录新入库商品。",
+          "Nhập nhanh:": "快速入库：",
+          "chọn mặt hàng, số lượng và ngày nhập.": "选择商品、数量和入库日期。",
+          "Ngày nhập": "入库日期",
+          "HÀNG HÓA": "商品",
+          "Hàng hóa": "商品",
+          "Ghi chú": "备注",
+          "GHI CHÚ": "备注",
+          "BỘ PHẬN MƯỢN": "借用部门",
+          "NGƯỜI NHẬN": "领取人",
+          "NGƯỜI GIAO": "交付人",
+          "Ngày lấy": "取货日期",
+          "NGÀY LẤY": "取货日期",
+          "NGÀY NHẬP": "入库日期",
+          Loại: "类型",
+          LOẠI: "类型",
+          "Người liên quan": "相关人员",
+          "NGƯỜI LIÊN QUAN": "相关人员",
+          "Thời gian": "时间",
+          "THỜI GIAN": "时间",
+          "Toàn bộ lịch sử nhập và xuất kho.": "全部入库和出库记录。",
+          "Nhật ký giao dịch": "交易日志",
+          "Xuất CSV": "导出 CSV",
+          "Xuất Excel": "导出 Excel",
+          "Tất cả giao dịch": "全部交易",
+          "Hướng dẫn sử dụng": "使用说明",
+          "Lưu ý": "注意",
+          "Một vài nguyên tắc giúp dữ liệu kho luôn rõ ràng và an toàn.":
+            "帮助保持库存数据清晰安全的原则。",
+          "Sao lưu định kỳ": "定期备份",
+          "Nhập Excel sẽ thay thế dữ liệu": "导入 Excel 将替换数据",
+          "Nhập và xuất đúng quy trình": "按流程入库和出库",
+          "Dùng offline đúng cách": "正确使用离线模式",
+          "Một thiết bị là nguồn dữ liệu chính": "一台设备作为主数据源",
+          "Kiểm tra trước khi chốt ngày": "关账前检查",
+          "Design by Sáng": "设计：Sáng",
+          "＋ Ghi xuất kho": "＋ 登记出库",
+          "＋ Ghi nhập kho": "＋ 登记入库",
+          "＋ Ghi đơn mượn": "＋ 登记借用单",
+          "Thông tin cần ghi": "需要记录",
+          "Các đơn xuất kho đã đánh dấu cho bộ phận khác mượn hàng.":
+            "已标记为借给其他部门的出库单。",
+          "Lưu ý:": "注意：",
+          "hàng mượn đã được trừ khỏi tồn kho. Khi nhận lại hàng, hãy ghi một giao dịch nhập kho để cập nhật tồn.":
+            "借用的商品已从库存中扣除。归还时请登记入库交易以更新库存。",
+          "Chưa có lịch sử xuất kho": "暂无出库记录",
+          "Chưa có lịch sử nhập kho": "暂无入库记录",
+          "Chưa có đơn mượn": "暂无借用单",
+          "Chưa có giao dịch": "暂无交易",
+          "Chưa có hàng hóa": "暂无商品",
+        }
+      : {};
+  document.documentElement.lang = language === "zh" ? "zh" : "vi";
+  document.querySelectorAll(".nav-item").forEach((n) => {
+    const key = labels[n.dataset.view],
+      icon = n.querySelector("span")?.textContent || "";
+    n.textContent = "";
+    n.append(icon, document.createTextNode(" "), tr(key));
+  });
+  qs("#language-toggle").textContent =
+    language === "zh" ? "VI / 中" : "中 / VI";
+  const active = document.querySelector(".nav-item.active")?.dataset.view;
+  if (active) qs("#page-title").textContent = tr(labels[active]);
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  nodes.forEach((node) => {
+    if (!node._sourceText) node._sourceText = node.nodeValue.trim();
+    const source = node._sourceText;
+    if (source)
+      node.nodeValue = node.nodeValue.replace(
+        source,
+        translations[source] || source,
+      );
+  });
+  if (language === "zh") {
+    if (qs("#dashboard-view h2"))
+      qs("#dashboard-view h2").innerHTML = "轻松管理库存 <span>✦</span>";
+    if (qs("#inventory-view .form-hint"))
+      qs("#inventory-view .form-hint").innerHTML =
+        "<b>Excel 格式：</b>第一个工作表包含以下列 <b>商品名称</b>、<b>商品编号</b>、<b>单位</b>、<b>库存数量</b>、<b>警戒线</b>。导入后，文件数据将替换当前库存。";
+    if (qs("#history-view h2")) qs("#history-view h2").textContent = "交易日志";
+    if (qs("#history-view .section-toolbar p"))
+      qs("#history-view .section-toolbar p").textContent =
+        "全部入库和出库记录。";
+    if (qs("#export-history")) qs("#export-history").textContent = "导出 CSV";
+    if (qs("#export-xlsx-history"))
+      qs("#export-xlsx-history").textContent = "导出 Excel";
+    if (qs("#issue-view h2")) qs("#issue-view h2").textContent = "出库单";
+    if (qs("#issue-view .section-toolbar .primary-btn"))
+      qs("#issue-view .section-toolbar .primary-btn").textContent =
+        "＋ 登记出库";
+    if (qs("#issue-view .form-hint"))
+      qs("#issue-view .form-hint").innerHTML =
+        "<b>需要记录：</b>商品名称、数量、单位、领取人、交付人和取货日期。如借给其他部门，请勾选 <b>借用单</b>。";
+    if (qs("#receive-view h2")) qs("#receive-view h2").textContent = "入库单";
+    if (qs("#receive-view .section-toolbar .primary-btn"))
+      qs("#receive-view .section-toolbar .primary-btn").textContent =
+        "＋ 登记入库";
+    if (qs("#loan-view h2")) qs("#loan-view h2").textContent = "借用单";
+    if (qs("#loan-view .form-hint"))
+      qs("#loan-view .form-hint").innerHTML =
+        "<b>注意：</b>借用的商品已从库存中扣除。归还时请登记入库交易以更新库存。";
+  }
+  document.querySelectorAll("[placeholder]").forEach((el) => {
+    if (!el.dataset.sourcePlaceholder)
+      el.dataset.sourcePlaceholder = el.placeholder;
+    el.placeholder =
+      language === "zh"
+        ? {
+            "Tìm tên hàng...": "搜索商品名称...",
+            "Tìm hàng, người nhận, người giao...":
+              "搜索商品、领取人、交付人...",
+          }[el.dataset.sourcePlaceholder] || el.dataset.sourcePlaceholder
+        : el.dataset.sourcePlaceholder;
+  });
+}
+function toggleLanguage() {
+  language = language === "vi" ? "zh" : "vi";
+  localStorage.setItem("khoflow-language", language);
+  location.reload();
+}
+const baseApplyLanguage = applyLanguage;
+applyLanguage = () => {
+  baseApplyLanguage();
+  const footer = qs("#site-footer");
+  if (footer)
+    footer.textContent = language === "zh" ? "设计：阮含光" : "Design by Sáng";
+  if (language === "zh") {
+    const noteTranslations = [
+      [
+        "定期备份",
+        "每天结束或每次盘点后，请进入 库存 → 导出 Excel，并至少在两个地方保存备份文件，例如 iPad 和 Google Drive。",
+      ],
+      [
+        "导入 Excel 将替换数据",
+        "只有在希望将文件作为正式库存数据时才使用 导入 Excel。导入前请先导出备份，以便误选文件时恢复。",
+      ],
+      [
+        "按流程入库和出库",
+        "入库会增加数量；出库会减少数量。不要重复记录同一笔交易。如有错误，请核对日志并用相反交易进行调整。",
+      ],
+      [
+        "正确使用离线模式",
+        "至少联网打开网站一次，让 PWA 完成数据加载。离线时不要清除浏览器数据，也不要使用隐私浏览模式。",
+      ],
+      [
+        "一台设备作为主数据源",
+        "数据目前保存在设备浏览器中。使用多个设备时不会自动同步；请使用一台主 iPad，并通过 Excel 文件传输数据。",
+      ],
+      [
+        "关账前检查",
+        "将总览页面的库存总量与实际库存核对，检查当天交易，并在关库前导出一份 Excel 文件。",
+      ],
+    ];
+    document
+      .querySelectorAll("#notes-view .note-card")
+      .forEach((card, index) => {
+        const [title, description] = noteTranslations[index] || [];
+        if (title) card.querySelector("h3").textContent = title;
+        if (description) card.querySelector("p").textContent = description;
+      });
+  }
+};
+function navigate(view) {
+  document
+    .querySelectorAll(".view")
+    .forEach((v) => v.classList.remove("active-view"));
+  qs(`#${view}-view`).classList.add("active-view");
+  document
+    .querySelectorAll(".nav-item")
+    .forEach((n) => n.classList.toggle("active", n.dataset.view === view));
+  qs("#page-title").textContent = {
+    dashboard: tr("dashboard"),
+    inventory: tr("inventory"),
+    issue: tr("issue"),
+    loan: tr("loan"),
+    receive: tr("receive"),
+    history: tr("history"),
+    notes: tr("notes"),
+  }[view];
+}
+function inventoryRows() {
+  return db.products.map((p) => ({
+    "Tên hàng": p.name,
+    "Mã hàng": p.sku,
+    "Đơn vị": p.unit,
+    "Số lượng tồn": p.qty,
+    "Định mức": p.min,
+  }));
+}
+function historyRows() {
+  return db.transactions.map((t) => ({
+    Ngày: t.date,
+    Loại: t.type === "out" ? "Xuất kho" : "Nhập kho",
+    Mượn: t.loan ? "Có" : "Không",
+    "Bộ phận mượn": t.borrowerDepartment || "",
+    "Tên hàng": t.productName,
+    "Số lượng": t.qty,
+    "Đơn vị": t.unit,
+    "Người nhận": t.receiver || "",
+    "Người giao": t.deliverer || "",
+    "Nguồn hàng": t.supplier || "",
+    "Ghi chú": t.note || "",
+  }));
+}
+function exportXlsx() {
+  if (!window.XLSX) return showToast("Chưa tải được thư viện Excel");
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(inventoryRows()),
+    "Tồn kho",
+  );
+  XLSX.utils.book_append_sheet(
+    wb,
+    XLSX.utils.json_to_sheet(historyRows()),
+    "Lịch sử",
+  );
+  XLSX.writeFile(wb, `backup-kho-${todayISO()}.xlsx`);
+  showToast("Đã xuất file Excel backup");
+}
+function numberValue(row, keys, fallback = 0) {
+  const key = keys.find((k) => row[k] !== undefined);
+  const value = key ? row[key] : fallback;
+  const n = Number(String(value ?? "").replace(/[,\. ]/g, ""));
+  return Number.isFinite(n) ? n : fallback;
+}
+function textValue(row, keys, fallback = "") {
+  const key = keys.find((k) => row[k] !== undefined);
+  return String(key ? row[key] : fallback).trim();
+}
+function importXlsx(file) {
+  if (!window.XLSX) return showToast("Chưa tải được thư viện Excel");
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    try {
+      const wb = XLSX.read(event.target.result, { type: "array" }),
+        sheet =
+          wb.Sheets[
+            wb.SheetNames.includes("Tồn kho") ? "Tồn kho" : wb.SheetNames[0]
+          ],
+        rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+      const products = rows
+        .map((r, i) => ({
+          id: Date.now() + i,
+          name: textValue(r, ["Tên hàng", "Tên hàng hóa", "name"]),
+          sku: textValue(
+            r,
+            ["Mã hàng", "SKU", "sku"],
+            `HH-${String(i + 1).padStart(3, "0")}`,
+          ),
+          unit: textValue(r, ["Đơn vị", "unit"], "cái"),
+          qty: numberValue(r, ["Số lượng tồn", "Số lượng", "Tồn kho", "qty"]),
+          min: numberValue(r, ["Định mức", "Mức tối thiểu", "min"]),
+        }))
+        .filter((p) => p.name && p.qty >= 0 && p.min >= 0);
+      if (!products.length)
+        throw new Error("Không tìm thấy dòng dữ liệu hợp lệ");
+      const historySheet = wb.SheetNames.includes("Lịch sử")
+        ? wb.Sheets["Lịch sử"]
+        : null;
+      const transactions = historySheet
+        ? XLSX.utils
+            .sheet_to_json(historySheet, { defval: "" })
+            .map((r, i) => ({
+              id: Date.now() + 10000 + i,
+              type: textValue(r, ["Loại", "type"])
+                .toLowerCase()
+                .includes("xuất")
+                ? "out"
+                : "in",
+              date: textValue(
+                r,
+                ["Ngày", "Ngày giao dịch", "date"],
+                todayISO(),
+              ),
+              productName: textValue(r, [
+                "Tên hàng",
+                "Tên hàng hóa",
+                "productName",
+              ]),
+              qty: numberValue(r, ["Số lượng", "qty"]),
+              unit: textValue(r, ["Đơn vị", "unit"]),
+              loan:
+                textValue(r, ["Mượn", "loan"]).toLowerCase().includes("có") ||
+                textValue(r, ["Mượn", "loan"]).toLowerCase() === "true",
+              borrowerDepartment: textValue(r, [
+                "Bộ phận mượn",
+                "borrowerDepartment",
+              ]),
+              receiver: textValue(r, ["Người nhận", "receiver"]),
+              deliverer: textValue(r, ["Người giao", "deliverer"]),
+              supplier: textValue(r, ["Nguồn hàng", "supplier"]),
+              note: textValue(r, ["Ghi chú", "note"]),
+            }))
+            .filter((t) => t.productName && t.qty > 0)
+        : [];
+      db = { version: DATA_VERSION, products, transactions };
+      save();
+      qs("#xlsx-file").value = "";
+      render();
+      showToast(`Đã nhập ${products.length} mặt hàng từ Excel`);
+    } catch (error) {
+      showToast(`Không thể nhập Excel: ${error.message}`);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+function exportCSV() {
+  const rows = [
+    [
+      "Ngày",
+      "Loại",
+      "Mượn",
+      "Bộ phận mượn",
+      "Hàng hóa",
+      "Số lượng",
+      "Đơn vị",
+      "Người nhận",
+      "Người giao",
+      "Nguồn hàng",
+      "Ghi chú",
+    ],
+    ...db.transactions.map((t) => [
+      t.date,
+      t.type === "out" ? "Xuất kho" : "Nhập kho",
+      t.loan ? "Có" : "Không",
+      t.borrowerDepartment,
+      t.productName,
+      t.qty,
+      t.unit,
+      t.receiver,
+      t.deliverer,
+      t.supplier,
+      t.note,
+    ]),
+  ];
+  const blob = new Blob(
+    [
+      "\ufeff" +
+        rows
+          .map((r) =>
+            r
+              .map((v) => `"${String(v ?? "").replaceAll('"', '""')}"`)
+              .join(","),
+          )
+          .join("\n"),
+    ],
+    { type: "text/csv;charset=utf-8" },
+  );
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "lich-su-kho.csv";
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+document.addEventListener("click", (e) => {
+  const nav = e.target.closest("[data-view]");
+  if (nav) navigate(nav.dataset.view);
+  const target = e.target.closest("[data-view-target]");
+  if (target) navigate(target.dataset.viewTarget);
+  const opener = e.target.closest("[data-open-modal]");
+  if (opener) openModal(opener.dataset.openModal);
+  if (e.target.closest("[data-close]")) qs("#modal-root").innerHTML = "";
+  const edit = e.target.closest("[data-edit-product]");
+  if (edit) openModal("product", Number(edit.dataset.editProduct));
+  if (e.target.id === "import-xlsx") qs("#xlsx-file").click();
+  if (e.target.id === "export-xlsx" || e.target.id === "export-xlsx-history")
+    exportXlsx();
+  if (e.target.id === "export-history") exportCSV();
+  if (e.target.id === "language-toggle") toggleLanguage();
+});
+qs("#xlsx-file")?.addEventListener("change", (e) => {
+  if (e.target.files[0]) importXlsx(e.target.files[0]);
+});
+["inventory-search", "history-search", "history-type"].forEach((id) =>
+  qs("#" + id)?.addEventListener("input", filterTables),
+);
+render();
 applyLanguage();
