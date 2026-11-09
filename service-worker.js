@@ -1,4 +1,4 @@
-const CACHE_NAME = 'khoflow-v2';
+const CACHE_NAME = 'khoflow-v4';
 const APP_ASSETS = [
   './',
   './index.html',
