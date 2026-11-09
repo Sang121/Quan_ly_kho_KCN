@@ -1,2 +1,2 @@
 # inventory-management-web
-Web quản lý kho với các thao tác CRUD hàng hóa, danh mục và nhập kho.
+Web quản lý kho với các thao tác CRUD hàng hóa, nhập/xuất kho và theo dõi các đơn mượn. Khi ghi xuất kho, tích **Đơn mượn** để lưu thêm bộ phận mượn; hàng mượn sẽ được trừ khỏi tồn kho và hiển thị riêng trong mục **Đơn mượn**. Mỗi phiếu nhập/xuất có thể gồm nhiều mặt hàng và có thể chuyển đổi giao diện giữa tiếng Việt và tiếng Trung bằng nút **中 / VI**.
