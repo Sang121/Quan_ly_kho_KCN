@@ -1,4 +1,4 @@
-const DATA_VERSION = 5;
+const DATA_VERSION = 6;
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const emptyData = { version: DATA_VERSION, products: [], transactions: [] };
 let language = localStorage.getItem("khoflow-language") || "vi";
@@ -51,6 +51,9 @@ const messages = {
     activeLoan: "Đang mượn",
     returnedLoan: "Đã trả",
     savedIncomingLoan: "Đã ghi nhận đơn mình mượn",
+    savedLoanReturned: "Đã cập nhật trả mượn và tồn kho",
+    savedLoanActive: "Đã mở lại đơn mượn và điều chỉnh tồn kho",
+    notEnoughToReturn: "Không đủ tồn kho để ghi nhận trả hàng",
     notEnough: "Không đủ tồn kho",
     addProduct: "Thêm mặt hàng",
     editProduct: "Sửa mặt hàng",
@@ -118,6 +121,9 @@ const messages = {
     activeLoan: "借用中",
     returnedLoan: "已归还",
     savedIncomingLoan: "本部门借用单已保存",
+    savedLoanReturned: "归还已登记，库存已更新",
+    savedLoanActive: "借用单已重新打开，库存已调整",
+    notEnoughToReturn: "库存不足，无法登记归还",
     notEnough: "库存不足",
     addProduct: "添加商品",
     editProduct: "编辑商品",
@@ -156,6 +162,9 @@ if (db.version !== DATA_VERSION) {
       borrowerDepartment: t.borrowerDepartment || "",
       lenderDepartment: t.lenderDepartment || "",
       returned: Boolean(t.returned),
+      loanInventoryApplied:
+        t.loanInventoryApplied ??
+        (t.loan && t.loanDirection !== "incoming"),
       orderId: t.orderId || t.id,
     })),
   };
@@ -429,7 +438,7 @@ function saveLoan() {
   }
   const orderId = Date.now();
   rows.forEach(({ p, qty }, index) => {
-    if (direction === "outgoing") p.qty -= qty;
+    p.qty += direction === "outgoing" ? -qty : qty;
     db.transactions.unshift({
       id: orderId + index,
       productId: p.id,
@@ -447,6 +456,7 @@ function saveLoan() {
       note: qs("#f-note").value.trim(),
       orderId,
       returned: false,
+      loanInventoryApplied: true,
     });
   });
   save();
@@ -496,6 +506,7 @@ function saveTransaction(isOut) {
       borrowerDepartment,
       lenderDepartment: "",
       returned: false,
+      loanInventoryApplied: Boolean(loan),
       receiver: isOut ? qs("#f-receiver").value.trim() : "",
       deliverer: isOut ? qs("#f-deliverer").value.trim() : "",
       note: qs("#f-note").value.trim(),
@@ -802,7 +813,7 @@ function applyLanguage() {
     if (qs("#loan-view h2")) qs("#loan-view h2").textContent = "借用单";
     if (qs("#loan-view .form-hint"))
       qs("#loan-view .form-hint").innerHTML =
-        "<b>注意：</b>借用的商品已从库存中扣除。归还时请登记入库交易以更新库存。";
+        "<b>库存流程：</b>其他部门借用时扣减库存，归还并标记后加回库存；本部门借用时加到库存，归还并标记后扣减库存。借用物品实际使用时，请正常登记出库。";
   }
   document.querySelectorAll("[placeholder]").forEach((el) => {
     if (!el.dataset.sourcePlaceholder)
@@ -1080,6 +1091,44 @@ function exportCSV() {
   a.click();
   URL.revokeObjectURL(a.href);
 }
+function toggleLoanReturned(transaction) {
+  const lines = db.transactions.filter(
+    (t) => t.loan && t.orderId === transaction.orderId,
+  );
+  const nextReturned = !transaction.returned;
+  const changes = lines.map((line) => {
+    if (!line.loanInventoryApplied) return { line, delta: 0 };
+    const direction = line.loanDirection === "incoming" ? -1 : 1;
+    return {
+      line,
+      delta: (nextReturned ? direction : -direction) * line.qty,
+    };
+  });
+  const totals = changes.reduce((map, { line, delta }) => {
+    map[line.productId] = (map[line.productId] || 0) + delta;
+    return map;
+  }, {});
+  const shortage = Object.entries(totals).find(([id, delta]) => {
+    const product = db.products.find((p) => p.id === +id);
+    return !product || product.qty + delta < 0;
+  });
+  if (shortage)
+    return showToast(
+      `${tr("notEnoughToReturn")}: ${
+        db.products.find((p) => p.id === +shortage[0])?.name || tr("productNotFound")
+      }`,
+    );
+  Object.entries(totals).forEach(([id, delta]) => {
+    const product = db.products.find((p) => p.id === +id);
+    product.qty += delta;
+  });
+  lines.forEach((line) => {
+    line.returned = nextReturned;
+  });
+  save();
+  render();
+  showToast(nextReturned ? tr("savedLoanReturned") : tr("savedLoanActive"));
+}
 document.addEventListener("click", (e) => {
   const nav = e.target.closest("[data-view]");
   if (nav) navigate(nav.dataset.view);
@@ -1109,13 +1158,7 @@ document.addEventListener("click", (e) => {
       (t) => t.id === Number(loanStatusButton.dataset.loanId),
     );
     if (!transaction) return;
-    db.transactions
-      .filter((t) => t.loan && t.orderId === transaction.orderId)
-      .forEach((t) => {
-        t.returned = !transaction.returned;
-      });
-    save();
-    render();
+    toggleLoanReturned(transaction);
   }
 });
 qs("#xlsx-file")?.addEventListener("change", (e) => {
