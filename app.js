@@ -1,4 +1,4 @@
-const DATA_VERSION = 4;
+const DATA_VERSION = 5;
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const emptyData = { version: DATA_VERSION, products: [], transactions: [] };
 let language = localStorage.getItem("khoflow-language") || "vi";
@@ -41,6 +41,16 @@ const messages = {
     requiredProduct: "Vui lòng chọn ít nhất một mặt hàng",
     requiredPeople: "Vui lòng nhập người nhận và người giao",
     requiredDepartment: "Vui lòng nhập bộ phận mượn",
+    requiredLenderDepartment: "Vui lòng nhập bộ phận cho mượn",
+    loanDirection: "Chiều mượn",
+    outgoingLoan: "Bộ phận khác mượn",
+    incomingLoan: "Mình mượn bộ phận khác",
+    relatedDepartment: "Bộ phận liên quan",
+    markReturned: "Đánh dấu đã trả",
+    markActive: "Đánh dấu đang mượn",
+    activeLoan: "Đang mượn",
+    returnedLoan: "Đã trả",
+    savedIncomingLoan: "Đã ghi nhận đơn mình mượn",
     notEnough: "Không đủ tồn kho",
     addProduct: "Thêm mặt hàng",
     editProduct: "Sửa mặt hàng",
@@ -98,6 +108,16 @@ const messages = {
     requiredProduct: "请至少选择一件商品",
     requiredPeople: "请输入领取人和交付人",
     requiredDepartment: "请输入借用部门",
+    requiredLenderDepartment: "请输入出借部门",
+    loanDirection: "借用方向",
+    outgoingLoan: "其他部门向本部门借用",
+    incomingLoan: "本部门向其他部门借用",
+    relatedDepartment: "相关部门",
+    markReturned: "标记已归还",
+    markActive: "标记借用中",
+    activeLoan: "借用中",
+    returnedLoan: "已归还",
+    savedIncomingLoan: "本部门借用单已保存",
     notEnough: "库存不足",
     addProduct: "添加商品",
     editProduct: "编辑商品",
@@ -132,7 +152,10 @@ if (db.version !== DATA_VERSION) {
     transactions: db.transactions.map((t) => ({
       ...t,
       loan: Boolean(t.loan),
+      loanDirection: t.loanDirection || (t.loan ? "outgoing" : ""),
       borrowerDepartment: t.borrowerDepartment || "",
+      lenderDepartment: t.lenderDepartment || "",
+      returned: Boolean(t.returned),
       orderId: t.orderId || t.id,
     })),
   };
@@ -180,8 +203,11 @@ function transactionRow(t) {
 function receiveRow(t) {
   return `<tr><td>${dateText(t.date)}</td><td><b>${esc(t.productName)}</b></td><td><b>${t.qty}</b> ${esc(t.unit)}</td><td class="muted">${esc(t.note || "—")}</td></tr>`;
 }
+let loanFilter = "all";
 function loanRow(t) {
-  return `<tr><td>${dateText(t.date)}</td><td><b>${esc(t.borrowerDepartment)}</b></td><td><b>${esc(t.productName)}</b></td><td><b>${t.qty}</b> ${esc(t.unit)}</td><td class="muted">${esc(t.receiver)}</td><td class="muted">${esc(t.deliverer)}</td><td class="muted">${esc(t.note || "—")}</td></tr>`;
+  const incoming = t.loanDirection === "incoming";
+  const department = incoming ? t.lenderDepartment : t.borrowerDepartment;
+  return `<tr><td>${dateText(t.date)}</td><td><span class="badge ${incoming ? "in" : "loan"}">${incoming ? tr("incomingLoan") : tr("outgoingLoan")}</span></td><td><b>${esc(department)}</b></td><td><b>${esc(t.productName)}</b></td><td><b>${t.qty}</b> ${esc(t.unit)}</td><td class="muted">${esc(t.receiver || t.deliverer)}</td><td><span class="badge ${t.returned ? "in" : "low"}">${t.returned ? tr("returnedLoan") : tr("activeLoan")}</span></td><td><button class="outline-btn loan-status-btn" data-loan-id="${t.id}">${t.returned ? tr("markActive") : tr("markReturned")}</button></td></tr>`;
 }
 function render() {
   const total = db.products.reduce((n, p) => n + p.qty, 0),
@@ -207,11 +233,17 @@ function render() {
     emptyRow(7, tr("noProduct"));
   const outs = db.transactions.filter((t) => t.type === "out");
   const ins = db.transactions.filter((t) => t.type === "in");
-  const loans = outs.filter((t) => t.loan);
+  const loans = db.transactions.filter((t) => t.loan);
   qs("#issues-table").innerHTML =
     outs.map(transactionRow).join("") || emptyRow(6, tr("noIssue"));
   qs("#loans-table").innerHTML =
-    loans.map(loanRow).join("") || emptyRow(7, tr("noLoan"));
+    loans
+      .filter((t) => loanFilter === "all" ||
+        (loanFilter === "active" && !t.returned) ||
+        (loanFilter === "returned" && t.returned) ||
+        (loanFilter === "incoming" && t.loanDirection === "incoming") ||
+        (loanFilter === "outgoing" && t.loanDirection !== "incoming"))
+      .map(loanRow).join("") || emptyRow(8, tr("noLoan"));
   qs("#receives-table").innerHTML =
     ins.map(receiveRow).join("") || emptyRow(4, tr("noReceive"));
   qs("#history-table").innerHTML =
@@ -273,7 +305,31 @@ function productOptions(selected = "") {
     )
     .join("");
 }
+function openLoanModal() {
+  const date = todayISO();
+  qs("#modal-root").innerHTML =
+    `<div class="modal-backdrop"><div class="modal transaction-modal"><div class="modal-head"><h3>${tr("recordLoan")}</h3><button class="close-btn" data-close>×</button></div><div class="modal-body"><div id="transaction-lines"></div><button class="outline-btn add-line-btn" id="add-line">${tr("addLine")}</button><div class="field"><label>${tr("dateOut")}</label><input id="f-date" type="date" value="${date}"></div><div class="field"><label>${tr("loanDirection")}</label><select id="f-loan-direction"><option value="outgoing">${tr("outgoingLoan")}</option><option value="incoming">${tr("incomingLoan")}</option></select></div><div class="field"><label>${tr("relatedDepartment")}</label><input id="f-related-department"></div><div class="form-row"><div class="field"><label>${tr("receiver")}</label><input id="f-receiver"></div><div class="field"><label>${tr("deliverer")}</label><input id="f-deliverer"></div></div><div class="field"><label>${tr("note")}</label><input id="f-note"></div><div class="modal-actions"><button class="cancel-btn" data-close>${tr("cancel")}</button><button class="primary-btn" id="save-loan-modal">${tr("save")}</button></div></div></div></div>`;
+  const addLine = () => {
+    const row = document.createElement("div");
+    row.className = "transaction-line";
+    row.innerHTML = `<div class="field product-field"><label>${tr("selectProduct")}</label><input class="transaction-product" list="loan-product-list" placeholder="${tr("searchProduct")}"><input class="transaction-product-id" type="hidden"><datalist id="loan-product-list">${db.products.map((p) => `<option value="${esc(p.name)}">${esc(p.name)} (${p.qty} ${esc(p.unit)})</option>`).join("")}</datalist></div><div class="field"><label>${tr("quantity")}</label><input class="transaction-qty" type="number" min="1" value="1"></div><div class="field"><label>${tr("unit")}</label><input class="transaction-unit" readonly></div><button type="button" class="remove-line" title="${tr("remove")}">×</button>`;
+    const productInput = row.querySelector(".transaction-product");
+    productInput.addEventListener("input", () => {
+      const p = db.products.find((x) => x.name.toLowerCase() === productInput.value.trim().toLowerCase());
+      row.querySelector(".transaction-product-id").value = p?.id || "";
+      row.querySelector(".transaction-unit").value = p?.unit || "";
+    });
+    row.querySelector(".remove-line").onclick = () => {
+      if (document.querySelectorAll("#transaction-lines .transaction-line").length > 1) row.remove();
+    };
+    qs("#transaction-lines").append(row);
+  };
+  addLine();
+  qs("#add-line").onclick = addLine;
+  qs("#save-loan-modal").onclick = saveLoan;
+}
 function openModal(type, id = null) {
+  if (type === "loan") return openLoanModal();
   if (type === "product") {
     const existing = id ? db.products.find((p) => p.id === id) : null;
     qs("#modal-root").innerHTML =
@@ -345,6 +401,52 @@ function saveProduct(id = null) {
   qs("#modal-root").innerHTML = "";
   render();
 }
+function saveLoan() {
+  const rows = [...document.querySelectorAll("#transaction-lines .transaction-line")].map((row) => ({
+    p: db.products.find((x) => x.id === +row.querySelector(".transaction-product-id").value),
+    qty: Number(row.querySelector(".transaction-qty").value),
+  }));
+  if (rows.some((r) => !r.p || !Number.isInteger(r.qty) || r.qty < 1))
+    return showToast(tr("requiredProduct"));
+  const direction = qs("#f-loan-direction").value;
+  const department = qs("#f-related-department").value.trim();
+  if (!department)
+    return showToast(direction === "incoming" ? tr("requiredLenderDepartment") : tr("requiredDepartment"));
+  const totals = rows.reduce((map, { p, qty }) => {
+    map[p.id] = (map[p.id] || 0) + qty;
+    return map;
+  }, {});
+  if (direction === "outgoing") {
+    const shortage = Object.entries(totals).find(([id, qty]) => qty > db.products.find((p) => p.id === +id).qty);
+    if (shortage) return showToast(`${tr("notEnough")}: ${db.products.find((p) => p.id === +shortage[0]).name}`);
+  }
+  const orderId = Date.now();
+  rows.forEach(({ p, qty }, index) => {
+    if (direction === "outgoing") p.qty -= qty;
+    db.transactions.unshift({
+      id: orderId + index,
+      productId: p.id,
+      productName: p.name,
+      qty,
+      unit: p.unit,
+      type: direction === "outgoing" ? "out" : "in",
+      date: qs("#f-date").value,
+      loan: true,
+      loanDirection: direction,
+      borrowerDepartment: direction === "outgoing" ? department : "",
+      lenderDepartment: direction === "incoming" ? department : "",
+      receiver: qs("#f-receiver").value.trim(),
+      deliverer: qs("#f-deliverer").value.trim(),
+      note: qs("#f-note").value.trim(),
+      orderId,
+      returned: false,
+    });
+  });
+  save();
+  qs("#modal-root").innerHTML = "";
+  render();
+  showToast(direction === "incoming" ? tr("savedIncomingLoan") : tr("savedLoan"));
+}
 function saveTransaction(isOut) {
   const rows = [...document.querySelectorAll(".transaction-line")].map(
     (row) => {
@@ -383,7 +485,10 @@ function saveTransaction(isOut) {
       type: isOut ? "out" : "in",
       date: qs("#f-date").value,
       loan: Boolean(loan),
+      loanDirection: loan ? "outgoing" : "",
       borrowerDepartment,
+      lenderDepartment: "",
+      returned: false,
       receiver: isOut ? qs("#f-receiver").value.trim() : "",
       deliverer: isOut ? qs("#f-deliverer").value.trim() : "",
       note: qs("#f-note").value.trim(),
@@ -621,6 +726,15 @@ function applyLanguage() {
           "Thông tin cần ghi": "需要记录",
           "Các đơn xuất kho đã đánh dấu cho bộ phận khác mượn hàng.":
             "已标记为借给其他部门的出库单。",
+          "Theo dõi cả đơn bộ phận khác mượn và đơn mình mượn từ bộ phận khác.":
+            "同时跟踪其他部门借用和本部门向其他部门借用的单据。",
+          "＋ Ghi đơn mượn": "＋ 登记借用单",
+          "đơn “Mình mượn” không làm thay đổi tồn kho của kho mình. Khi hàng được trả, hãy bấm":
+            "“本部门借用”不会改变本部门库存。归还时请点击",
+          "Đánh dấu đã trả": "标记已归还",
+          "CHIỀU MƯỢN": "借用方向",
+          "BỘ PHẬN LIÊN QUAN": "相关部门",
+          "TRẠNG THÁI": "状态",
           "Lưu ý:": "注意：",
           "hàng mượn đã được trừ khỏi tồn kho. Khi nhận lại hàng, hãy ghi một giao dịch nhập kho để cập nhật tồn.":
             "借用的商品已从库存中扣除。归还时请登记入库交易以更新库存。",
@@ -775,7 +889,10 @@ function historyRows() {
     Ngày: t.date,
     Loại: t.type === "out" ? "Xuất kho" : "Nhập kho",
     Mượn: t.loan ? "Có" : "Không",
+    "Chiều mượn": t.loanDirection === "incoming" ? "Mình mượn" : t.loan ? "Bộ phận khác mượn" : "",
     "Bộ phận mượn": t.borrowerDepartment || "",
+    "Bộ phận cho mượn": t.lenderDepartment || "",
+    "Trạng thái mượn": t.loan ? (t.returned ? "Đã trả" : "Đang mượn") : "",
     "Tên hàng": t.productName,
     "Số lượng": t.qty,
     "Đơn vị": t.unit,
@@ -866,10 +983,24 @@ function importXlsx(file) {
               loan:
                 textValue(r, ["Mượn", "loan"]).toLowerCase().includes("có") ||
                 textValue(r, ["Mượn", "loan"]).toLowerCase() === "true",
+              loanDirection:
+                textValue(r, ["Chiều mượn", "loanDirection"]).toLowerCase().includes("mình") ||
+                textValue(r, ["Chiều mượn", "loanDirection"]).toLowerCase().includes("incoming")
+                  ? "incoming"
+                  : textValue(r, ["Mượn", "loan"]).toLowerCase().includes("có")
+                    ? "outgoing"
+                    : "",
               borrowerDepartment: textValue(r, [
                 "Bộ phận mượn",
                 "borrowerDepartment",
               ]),
+              lenderDepartment: textValue(r, [
+                "Bộ phận cho mượn",
+                "lenderDepartment",
+              ]),
+              returned:
+                textValue(r, ["Trạng thái mượn", "returned"]).toLowerCase().includes("đã trả") ||
+                textValue(r, ["Trạng thái mượn", "returned"]).toLowerCase() === "true",
               receiver: textValue(r, ["Người nhận", "receiver"]),
               deliverer: textValue(r, ["Người giao", "deliverer"]),
               supplier: textValue(r, ["Nguồn hàng", "supplier"]),
@@ -894,7 +1025,10 @@ function exportCSV() {
       "Ngày",
       "Loại",
       "Mượn",
+      "Chiều mượn",
       "Bộ phận mượn",
+      "Bộ phận cho mượn",
+      "Trạng thái mượn",
       "Hàng hóa",
       "Số lượng",
       "Đơn vị",
@@ -907,7 +1041,10 @@ function exportCSV() {
       t.date,
       t.type === "out" ? "Xuất kho" : "Nhập kho",
       t.loan ? "Có" : "Không",
+      t.loanDirection === "incoming" ? "Mình mượn" : t.loan ? "Bộ phận khác mượn" : "",
       t.borrowerDepartment,
+      t.lenderDepartment || "",
+      t.loan ? (t.returned ? "Đã trả" : "Đang mượn") : "",
       t.productName,
       t.qty,
       t.unit,
@@ -951,6 +1088,28 @@ document.addEventListener("click", (e) => {
     exportXlsx();
   if (e.target.id === "export-history") exportCSV();
   if (e.target.id === "language-toggle") toggleLanguage();
+  const loanFilterButton = e.target.closest("[data-loan-filter]");
+  if (loanFilterButton) {
+    loanFilter = loanFilterButton.dataset.loanFilter;
+    document.querySelectorAll(".loan-filter").forEach((button) =>
+      button.classList.toggle("active", button === loanFilterButton),
+    );
+    render();
+  }
+  const loanStatusButton = e.target.closest("[data-loan-id]");
+  if (loanStatusButton) {
+    const transaction = db.transactions.find(
+      (t) => t.id === Number(loanStatusButton.dataset.loanId),
+    );
+    if (!transaction) return;
+    db.transactions
+      .filter((t) => t.loan && t.orderId === transaction.orderId)
+      .forEach((t) => {
+        t.returned = !transaction.returned;
+      });
+    save();
+    render();
+  }
 });
 qs("#xlsx-file")?.addEventListener("change", (e) => {
   if (e.target.files[0]) importXlsx(e.target.files[0]);
