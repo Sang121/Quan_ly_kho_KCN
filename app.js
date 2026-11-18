@@ -192,13 +192,16 @@ function productRow(p, preview = false) {
   return `<tr><td><div class="product-cell"><span class="product-thumb">${esc(p.name.slice(0, 1).toUpperCase())}</span><b>${esc(p.name)}</b></div></td>${preview ? "" : `<td class="muted">${esc(p.sku)}</td>`}<td><b>${p.qty}</b></td><td class="muted">${esc(p.unit)}</td>${preview ? "" : "<td>" + p.min + "</td>"}<td><span class="badge ${kind}">${label}</span></td><td><button class="row-actions" data-edit-product="${p.id}">•••</button></td></tr>`;
 }
 function transactionRow(t) {
-  const people =
-    t.type === "out"
-      ? t.loan
-        ? `${language === "zh" ? "借用部门" : "Bộ phận mượn"}: ${esc(t.borrowerDepartment)} · ${language === "zh" ? "领取人" : "Nhận"}: ${esc(t.receiver)} · ${language === "zh" ? "交付人" : "Giao"}: ${esc(t.deliverer)}`
-        : `${language === "zh" ? "领取人" : "Nhận"}: ${esc(t.receiver)} · ${language === "zh" ? "交付人" : "Giao"}: ${esc(t.deliverer)}`
+  const incomingLoan = t.loanDirection === "incoming";
+  const people = t.loan
+    ? `${language === "zh" ? "相关部门" : "Bộ phận liên quan"}: ${esc(incomingLoan ? t.lenderDepartment : t.borrowerDepartment)} · ${language === "zh" ? "领取人" : "Nhận"}: ${esc(t.receiver)} · ${language === "zh" ? "交付人" : "Giao"}: ${esc(t.deliverer)}`
+    : t.type === "out"
+      ? `${language === "zh" ? "领取人" : "Nhận"}: ${esc(t.receiver)} · ${language === "zh" ? "交付人" : "Giao"}: ${esc(t.deliverer)}`
       : "—";
-  return `<tr><td>${dateText(t.date)}</td><td><span class="badge ${t.type === "out" ? "out" : "in"}">${t.type === "out" ? (language === "zh" ? "↑ 出库" : "↑ Xuất") : language === "zh" ? "↓ 入库" : "↓ Nhập"}</span>${t.loan ? `<span class="badge loan">${language === "zh" ? "借用" : "Mượn"}</span>` : ""}</td><td><b>${esc(t.productName)}</b></td><td><b>${t.qty}</b> ${esc(t.unit)}</td><td class="muted">${people}</td><td class="muted">${esc(t.note || "—")}</td></tr>`;
+  const loanBadges = t.loan
+    ? `<span class="badge ${incomingLoan ? "in" : "loan"}">${incomingLoan ? tr("incomingLoan") : tr("outgoingLoan")}</span><span class="badge ${t.returned ? "in" : "low"}">${t.returned ? tr("returnedLoan") : tr("activeLoan")}</span>`
+    : "";
+  return `<tr><td>${dateText(t.date)}</td><td><span class="badge ${t.type === "out" ? "out" : "in"}">${t.type === "out" ? (language === "zh" ? "↑ 出库" : "↑ Xuất") : language === "zh" ? "↓ 入库" : "↓ Nhập"}</span>${loanBadges}</td><td><b>${esc(t.productName)}</b></td><td><b>${t.qty}</b> ${esc(t.unit)}</td><td class="muted">${people}</td><td class="muted">${esc(t.note || "—")}</td></tr>`;
 }
 function receiveRow(t) {
   return `<tr><td>${dateText(t.date)}</td><td><b>${esc(t.productName)}</b></td><td><b>${t.qty}</b> ${esc(t.unit)}</td><td class="muted">${esc(t.note || "—")}</td></tr>`;
@@ -232,10 +235,14 @@ function render() {
     db.products.map((p) => productRow(p)).join("") ||
     emptyRow(7, tr("noProduct"));
   const outs = db.transactions.filter((t) => t.type === "out");
+  const loanHistory = db.transactions.filter(
+    (t) => t.loan && t.loanDirection === "incoming" && t.type === "in",
+  );
   const ins = db.transactions.filter((t) => t.type === "in");
   const loans = db.transactions.filter((t) => t.loan);
   qs("#issues-table").innerHTML =
-    outs.map(transactionRow).join("") || emptyRow(6, tr("noIssue"));
+    outs.concat(loanHistory).map(transactionRow).join("") ||
+    emptyRow(6, tr("noIssue"));
   qs("#loans-table").innerHTML =
     loans
       .filter((t) => loanFilter === "all" ||
